@@ -1,201 +1,91 @@
+# ============================================================
+# BITS ML ASSIGNMENT - FINAL STREAMLIT APP
+# Author: Sathya
+# ============================================================
+
 import streamlit as st
 import pandas as pd
-import numpy as np
+import joblib
+import os
 
-from sklearn.model_selection import train_test_split
-from sklearn.pipeline import Pipeline
-from sklearn.compose import ColumnTransformer
-from sklearn.preprocessing import OneHotEncoder, StandardScaler
-from sklearn.impute import SimpleImputer
-from sklearn.metrics import (
-    classification_report,
-    confusion_matrix,
-    roc_curve,
-    roc_auc_score,
-    accuracy_score,
-    precision_score,
-    recall_score,
-    f1_score,
-    matthews_corrcoef
-)
+st.set_page_config(page_title="BITS ML Model Deployment", layout="wide")
 
-from sklearn.linear_model import LogisticRegression
-from sklearn.tree import DecisionTreeClassifier
-from sklearn.neighbors import KNeighborsClassifier
-from sklearn.naive_bayes import GaussianNB
-from sklearn.ensemble import RandomForestClassifier
-from xgboost import XGBClassifier
+st.title("🎓 BITS ML Assignment - Model Deployment")
+st.markdown("### 🔥 Automatic Best Model Selection")
 
-import matplotlib.pyplot as plt
-import seaborn as sns
+# ============================================================
+# LOAD BEST MODEL
+# ============================================================
 
+@st.cache_resource
+def load_best_model():
+    leaderboard = pd.read_csv("model/model_comparison.csv")
 
-# -----------------------
-# PAGE CONFIG
-# -----------------------
-st.set_page_config(page_title="ML Classification Dashboard", layout="wide")
-st.title("🚀 ML Classification Dashboard")
+    best_model_name = leaderboard.iloc[0]["Model"]
 
+    st.success(f"Best Model Automatically Selected: {best_model_name.upper()}")
 
-uploaded_file = st.file_uploader("📂 Upload CSV Dataset", type=["csv"])
-
-if uploaded_file:
-
-    df = pd.read_csv(uploaded_file)
-    df.replace("?", np.nan, inplace=True)
-
-    X = df.drop("income", axis=1)
-    y = df["income"].map({"<=50K": 0, ">50K": 1})
-
-    categorical_cols = X.select_dtypes(include=["object"]).columns
-    numerical_cols = X.select_dtypes(exclude=["object"]).columns
-
-    # Sparse Preprocessor
-    preprocessor_sparse = ColumnTransformer([
-        ("num", Pipeline([
-            ("imputer", SimpleImputer(strategy="median")),
-            ("scaler", StandardScaler())
-        ]), numerical_cols),
-
-        ("cat", Pipeline([
-            ("imputer", SimpleImputer(strategy="most_frequent")),
-            ("encoder", OneHotEncoder(handle_unknown="ignore"))
-        ]), categorical_cols)
-    ])
-
-    # Dense for Naive Bayes
-    preprocessor_dense = ColumnTransformer([
-        ("num", Pipeline([
-            ("imputer", SimpleImputer(strategy="median")),
-            ("scaler", StandardScaler())
-        ]), numerical_cols),
-
-        ("cat", Pipeline([
-            ("imputer", SimpleImputer(strategy="most_frequent")),
-            ("encoder", OneHotEncoder(handle_unknown="ignore", sparse_output=False))
-        ]), categorical_cols)
-    ])
-
-    model_option = st.selectbox(
-        "🤖 Select Model",
-        ["Logistic Regression",
-         "Decision Tree",
-         "KNN",
-         "Naive Bayes",
-         "Random Forest",
-         "XGBoost"]
-    )
-
-    model_dict = {
-        "Logistic Regression": LogisticRegression(max_iter=1000, solver="liblinear"),
-        "Decision Tree": DecisionTreeClassifier(max_depth=10),
-        "KNN": KNeighborsClassifier(n_neighbors=5),
-        "Naive Bayes": GaussianNB(),
-        "Random Forest": RandomForestClassifier(n_estimators=100, max_depth=10),
-        "XGBoost": XGBClassifier(eval_metric="logloss")
-    }
-
-    model = model_dict[model_option]
-
-    if model_option == "Naive Bayes":
-        selected_preprocessor = preprocessor_dense
+    if best_model_name == "naive_bayes":
+        model = joblib.load(f"model/{best_model_name}.pkl")
+        preprocessor = joblib.load("model/preprocessor.pkl")
+        return best_model_name, model, preprocessor
     else:
-        selected_preprocessor = preprocessor_sparse
+        model = joblib.load(f"model/{best_model_name}.pkl")
+        return best_model_name, model, None
 
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=42
-    )
 
-    pipeline = Pipeline([
-        ("preprocessor", selected_preprocessor),
-        ("classifier", model)
-    ])
+model_name, model, preprocessor = load_best_model()
 
-    pipeline.fit(X_train, y_train)
+# ============================================================
+# LOAD DATA FOR INPUT STRUCTURE
+# ============================================================
 
-    preds = pipeline.predict(X_test)
-    probs = pipeline.predict_proba(X_test)[:, 1]
+df = pd.read_csv("data.csv")
+target_column = df.columns[-1]
+X = df.drop(columns=[target_column])
 
-    # -----------------------
-    # METRICS
-    # -----------------------
-    accuracy = accuracy_score(y_test, preds)
-    auc = roc_auc_score(y_test, probs)
-    precision = precision_score(y_test, preds)
-    recall = recall_score(y_test, preds)
-    f1 = f1_score(y_test, preds)
-    mcc = matthews_corrcoef(y_test, preds)
+st.sidebar.header("Enter Input Features")
 
-    tab1, tab2, tab3 = st.tabs(["📊 Metrics", "📈 Graphs", "🌲 Feature Importance"])
+user_input = {}
 
-    # ===============================
-    # TAB 1 — METRICS
-    # ===============================
-    with tab1:
+for column in X.columns:
+    if X[column].dtype == "object":
+        user_input[column] = st.sidebar.selectbox(
+            column,
+            options=sorted(X[column].unique())
+        )
+    else:
+        user_input[column] = st.sidebar.number_input(
+            column,
+            value=float(X[column].mean())
+        )
 
-        col1, col2, col3 = st.columns(3)
-        col1.metric("Accuracy", f"{accuracy:.4f}")
-        col2.metric("AUC", f"{auc:.4f}")
-        col3.metric("Precision", f"{precision:.4f}")
+input_df = pd.DataFrame([user_input])
 
-        col4, col5, col6 = st.columns(3)
-        col4.metric("Recall", f"{recall:.4f}")
-        col5.metric("F1 Score", f"{f1:.4f}")
-        col6.metric("MCC", f"{mcc:.4f}")
+# ============================================================
+# PREDICTION
+# ============================================================
 
-        st.subheader("Classification Report")
-        st.text(classification_report(y_test, preds))
+st.subheader("Prediction")
 
-    # ===============================
-    # TAB 2 — GRAPHS
-    # ===============================
-    with tab2:
+if st.button("Predict"):
 
-        st.subheader("Confusion Matrix")
-        cm = confusion_matrix(y_test, preds)
-        fig1, ax1 = plt.subplots()
-        sns.heatmap(cm, annot=True, fmt="d", cmap="Blues", ax=ax1)
-        st.pyplot(fig1)
+    if model_name == "naive_bayes":
+        processed_input = preprocessor.transform(input_df).toarray()
+        prediction = model.predict(processed_input)[0]
+        probability = model.predict_proba(processed_input)[0][1]
+    else:
+        prediction = model.predict(input_df)[0]
+        probability = model.predict_proba(input_df)[0][1]
 
-        st.subheader("ROC Curve")
-        fpr, tpr, _ = roc_curve(y_test, probs)
-        fig2, ax2 = plt.subplots()
-        ax2.plot(fpr, tpr)
-        ax2.plot([0, 1], [0, 1])
-        ax2.set_xlabel("False Positive Rate")
-        ax2.set_ylabel("True Positive Rate")
-        st.pyplot(fig2)
+    st.success(f"Predicted Class: {prediction}")
+    st.info(f"Prediction Probability: {probability:.4f}")
 
-        st.subheader("Metrics Comparison")
-        metrics_df = pd.DataFrame({
-            "Metric": ["Accuracy", "AUC", "Precision", "Recall", "F1", "MCC"],
-            "Value": [accuracy, auc, precision, recall, f1, mcc]
-        })
+# ============================================================
+# LEADERBOARD DISPLAY
+# ============================================================
 
-        fig3, ax3 = plt.subplots()
-        sns.barplot(data=metrics_df, x="Metric", y="Value", ax=ax3)
-        st.pyplot(fig3)
+st.subheader("📊 Model Leaderboard")
 
-    # ===============================
-    # TAB 3 — FEATURE IMPORTANCE
-    # ===============================
-    with tab3:
-
-        if model_option in ["Random Forest", "XGBoost"]:
-
-            model_fitted = pipeline.named_steps["classifier"]
-            feature_names = pipeline.named_steps["preprocessor"].get_feature_names_out()
-
-            importances = model_fitted.feature_importances_
-
-            fi_df = pd.DataFrame({
-                "Feature": feature_names,
-                "Importance": importances
-            }).sort_values(by="Importance", ascending=False).head(15)
-
-            fig4, ax4 = plt.subplots(figsize=(8, 6))
-            sns.barplot(data=fi_df, x="Importance", y="Feature", ax=ax4)
-            st.pyplot(fig4)
-
-        else:
-            st.info("Feature importance available only for Random Forest and XGBoost.")
+leaderboard = pd.read_csv("model/model_comparison.csv")
+st.dataframe(leaderboard, use_container_width=True)
