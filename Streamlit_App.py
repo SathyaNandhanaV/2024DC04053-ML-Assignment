@@ -1,6 +1,9 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+from PIL import Image
+import matplotlib.pyplot as plt
+import seaborn as sns
 
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
@@ -26,19 +29,79 @@ from sklearn.naive_bayes import GaussianNB
 from sklearn.ensemble import RandomForestClassifier
 from xgboost import XGBClassifier
 
-import matplotlib.pyplot as plt
-import seaborn as sns
 
-
-# -----------------------
+# ---------------------------------------------------
 # PAGE CONFIG
-# -----------------------
-st.set_page_config(page_title="ML Classification Dashboard", layout="wide")
-st.title("🚀 ML Classification Dashboard")
+# ---------------------------------------------------
+st.set_page_config(
+    page_title="BITS ML Dashboard",
+    page_icon="🎓",
+    layout="wide"
+)
 
+# ---------------------------------------------------
+# BITS THEME STYLING (Blue + Gold)
+# ---------------------------------------------------
+st.markdown("""
+<style>
+    .main {
+        background-color: #f5f7fa;
+    }
+    h1, h2, h3 {
+        color: #003366;
+    }
+    .stMetric {
+        background-color: white;
+        padding: 10px;
+        border-radius: 10px;
+        border-left: 5px solid #d4af37;
+    }
+    footer {visibility: hidden;}
+</style>
+""", unsafe_allow_html=True)
 
-uploaded_file = st.file_uploader("📂 Upload CSV Dataset", type=["csv"])
+# ---------------------------------------------------
+# HEADER WITH LOGO
+# ---------------------------------------------------
+logo = Image.open("bits.png")
 
+col1, col2 = st.columns([1.2, 5])
+
+with col1:
+    st.image(logo, width=160)
+
+with col2:
+    st.markdown("""
+        <h1 style='margin-bottom:0;'>BITS Pilani</h1>
+        <h3 style='margin-top:0; color:#d4af37;'>
+        Work Integrated Learning Programme
+        </h3>
+        <h2>Machine Learning Classification Dashboard</h2>
+    """, unsafe_allow_html=True)
+
+st.markdown("---")
+
+# ---------------------------------------------------
+# SIDEBAR
+# ---------------------------------------------------
+st.sidebar.image(logo, width=120)
+st.sidebar.title("🎓 ML Assignment-2")
+
+uploaded_file = st.sidebar.file_uploader("Upload CSV Dataset", type=["csv"])
+
+model_option = st.sidebar.selectbox(
+    "Select Model",
+    ["Logistic Regression",
+     "Decision Tree",
+     "KNN",
+     "Naive Bayes",
+     "Random Forest",
+     "XGBoost"]
+)
+
+# ---------------------------------------------------
+# MAIN LOGIC
+# ---------------------------------------------------
 if uploaded_file:
 
     df = pd.read_csv(uploaded_file)
@@ -50,7 +113,6 @@ if uploaded_file:
     categorical_cols = X.select_dtypes(include=["object"]).columns
     numerical_cols = X.select_dtypes(exclude=["object"]).columns
 
-    # Sparse Preprocessor
     preprocessor_sparse = ColumnTransformer([
         ("num", Pipeline([
             ("imputer", SimpleImputer(strategy="median")),
@@ -63,7 +125,6 @@ if uploaded_file:
         ]), categorical_cols)
     ])
 
-    # Dense for Naive Bayes
     preprocessor_dense = ColumnTransformer([
         ("num", Pipeline([
             ("imputer", SimpleImputer(strategy="median")),
@@ -76,16 +137,6 @@ if uploaded_file:
         ]), categorical_cols)
     ])
 
-    model_option = st.selectbox(
-        "🤖 Select Model",
-        ["Logistic Regression",
-         "Decision Tree",
-         "KNN",
-         "Naive Bayes",
-         "Random Forest",
-         "XGBoost"]
-    )
-
     model_dict = {
         "Logistic Regression": LogisticRegression(max_iter=1000, solver="liblinear"),
         "Decision Tree": DecisionTreeClassifier(max_depth=10),
@@ -97,10 +148,7 @@ if uploaded_file:
 
     model = model_dict[model_option]
 
-    if model_option == "Naive Bayes":
-        selected_preprocessor = preprocessor_dense
-    else:
-        selected_preprocessor = preprocessor_sparse
+    selected_preprocessor = preprocessor_dense if model_option == "Naive Bayes" else preprocessor_sparse
 
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=0.2, random_state=42
@@ -116,9 +164,9 @@ if uploaded_file:
     preds = pipeline.predict(X_test)
     probs = pipeline.predict_proba(X_test)[:, 1]
 
-    # -----------------------
+    # ---------------------------------------------------
     # METRICS
-    # -----------------------
+    # ---------------------------------------------------
     accuracy = accuracy_score(y_test, preds)
     auc = roc_auc_score(y_test, probs)
     precision = precision_score(y_test, preds)
@@ -128,9 +176,7 @@ if uploaded_file:
 
     tab1, tab2, tab3 = st.tabs(["📊 Metrics", "📈 Graphs", "🌲 Feature Importance"])
 
-    # ===============================
-    # TAB 1 — METRICS
-    # ===============================
+    # ------------------ TAB 1 ------------------
     with tab1:
 
         col1, col2, col3 = st.columns(3)
@@ -146,9 +192,7 @@ if uploaded_file:
         st.subheader("Classification Report")
         st.text(classification_report(y_test, preds))
 
-    # ===============================
-    # TAB 2 — GRAPHS
-    # ===============================
+    # ------------------ TAB 2 ------------------
     with tab2:
 
         st.subheader("Confusion Matrix")
@@ -176,9 +220,7 @@ if uploaded_file:
         sns.barplot(data=metrics_df, x="Metric", y="Value", ax=ax3)
         st.pyplot(fig3)
 
-    # ===============================
-    # TAB 3 — FEATURE IMPORTANCE
-    # ===============================
+    # ------------------ TAB 3 ------------------
     with tab3:
 
         if model_option in ["Random Forest", "XGBoost"]:
@@ -199,3 +241,12 @@ if uploaded_file:
 
         else:
             st.info("Feature importance available only for Random Forest and XGBoost.")
+
+# ---------------------------------------------------
+# FOOTER
+# ---------------------------------------------------
+st.markdown("---")
+st.markdown(
+    "<center><b>BITS Pilani – WILP | Machine Learning Assignment Dashboard</b></center>",
+    unsafe_allow_html=True
+)
