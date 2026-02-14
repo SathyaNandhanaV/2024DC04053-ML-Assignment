@@ -1,134 +1,141 @@
 # ============================================================
-# BITS ML ASSIGNMENT - CLOUD SAFE STREAMLIT APP
+# BITS ML Assignment 2 - Streamlit App
 # ============================================================
 
 import streamlit as st
 import pandas as pd
 import numpy as np
+import joblib
+import os
 
-from sklearn.model_selection import train_test_split, cross_val_score
-from sklearn.preprocessing import OneHotEncoder, StandardScaler, LabelEncoder
-from sklearn.compose import ColumnTransformer
-from sklearn.pipeline import Pipeline
-from sklearn.metrics import accuracy_score
-from sklearn.linear_model import LogisticRegression
-from sklearn.ensemble import RandomForestClassifier
-from xgboost import XGBClassifier
+from sklearn.metrics import (
+    accuracy_score,
+    precision_score,
+    recall_score,
+    f1_score,
+    roc_auc_score,
+    matthews_corrcoef,
+    confusion_matrix,
+    classification_report
+)
 
-st.set_page_config(page_title="BITS ML Deployment", layout="wide")
+st.set_page_config(page_title="ML Assignment 2", layout="wide")
 
-st.title("🎓 BITS ML Assignment - Cloud Deployment")
-
-# ============================================================
-# LOAD DATA
-# ============================================================
-
-@st.cache_data
-def load_data():
-    return pd.read_csv("data.csv")
-
-df = load_data()
-
-target_column = df.columns[-1]
-X = df.drop(columns=[target_column])
-y = df[target_column]
-
-# Encode target
-if y.dtype == "object":
-    le = LabelEncoder()
-    y = le.fit_transform(y)
+st.title("Machine Learning Assignment 2 - Classification Models")
 
 # ============================================================
-# TRAIN MODEL INSIDE STREAMLIT
+# LOAD MODELS
 # ============================================================
 
 @st.cache_resource
-def train_best_model():
+def load_models():
+    models = {}
+    model_files = [
+        "logistic.pkl",
+        "decision_tree.pkl",
+        "knn.pkl",
+        "naive_bayes.pkl",
+        "random_forest.pkl",
+        "xgboost.pkl"
+    ]
 
-    numeric_cols = X.select_dtypes(include=["int64", "float64"]).columns
-    categorical_cols = X.select_dtypes(include=["object"]).columns
+    for file in model_files:
+        path = os.path.join("model", file)
+        if os.path.exists(path):
+            models[file.replace(".pkl", "")] = joblib.load(path)
 
-    preprocessor = ColumnTransformer([
-        ("num", StandardScaler(), numeric_cols),
-        ("cat", OneHotEncoder(handle_unknown="ignore"), categorical_cols)
-    ])
-
-    models = {
-        "Logistic Regression": LogisticRegression(max_iter=1000),
-        "Random Forest": RandomForestClassifier(
-            n_estimators=50,
-            max_depth=10,
-            random_state=42
-        ),
-        "XGBoost": XGBClassifier(
-            n_estimators=50,
-            max_depth=5,
-            learning_rate=0.1,
-            eval_metric="logloss",
-            use_label_encoder=False,
-            verbosity=0
-        )
-    }
-
-    best_score = 0
-    best_model = None
-    best_name = ""
-
-    for name, model in models.items():
-        pipeline = Pipeline([
-            ("preprocessor", preprocessor),
-            ("classifier", model)
-        ])
-
-        cv_score = cross_val_score(pipeline, X, y, cv=5, scoring="accuracy").mean()
-
-        if cv_score > best_score:
-            best_score = cv_score
-            best_model = pipeline
-            best_name = name
-
-    best_model.fit(X, y)
-
-    return best_name, best_model, best_score
+    return models
 
 
-model_name, model, score = train_best_model()
+models = load_models()
 
-st.success(f"🔥 Best Model Selected: {model_name}")
-st.info(f"Cross Validation Accuracy: {score:.4f}")
+if not models:
+    st.error("No models found in model/ folder.")
+    st.stop()
 
 # ============================================================
-# USER INPUT
+# DATASET UPLOAD
 # ============================================================
 
-st.sidebar.header("Enter Feature Values")
+st.header("Upload Test Dataset (CSV)")
+uploaded_file = st.file_uploader("Upload CSV file", type=["csv"])
 
-user_input = {}
+if uploaded_file is None:
+    st.warning("Please upload test dataset to proceed.")
+    st.stop()
 
-for column in X.columns:
-    if X[column].dtype == "object":
-        user_input[column] = st.sidebar.selectbox(
-            column,
-            sorted(X[column].unique())
-        )
-    else:
-        user_input[column] = st.sidebar.number_input(
-            column,
-            value=float(X[column].mean())
-        )
+data = pd.read_csv(uploaded_file)
 
-input_df = pd.DataFrame([user_input])
+st.success("Dataset uploaded successfully!")
+st.write("Dataset Shape:", data.shape)
+
+# Assume last column is target
+target_column = data.columns[-1]
+X_test = data.drop(columns=[target_column])
+y_test = data[target_column]
+
+# ============================================================
+# MODEL SELECTION
+# ============================================================
+
+st.header("Select Model")
+
+model_name = st.selectbox(
+    "Choose a classification model:",
+    list(models.keys())
+)
+
+model = models[model_name]
 
 # ============================================================
 # PREDICTION
 # ============================================================
 
-st.subheader("Prediction")
+st.header("Model Evaluation")
 
-if st.button("Predict"):
+try:
+    y_pred = model.predict(X_test)
+    y_prob = model.predict_proba(X_test)[:, 1]
+except:
+    st.error("Model failed to predict. Ensure test data matches training features.")
+    st.stop()
 
-    prediction = model.predict(input_df)[0]
-    probability = model.predict_proba(input_df)[0][1]
+# ============================================================
+# METRICS
+# ============================================================
 
-    st.success(f"Predicted Class: {prediction}")
-    st.info(f"Prediction Probability: {probability:.4f}")
+accuracy = accuracy_score(y_test, y_pred)
+precision = precision_score(y_test, y_pred, average="weighted")
+recall = recall_score(y_test, y_pred, average="weighted")
+f1 = f1_score(y_test, y_pred, average="weighted")
+auc = roc_auc_score(y_test, y_prob)
+mcc = matthews_corrcoef(y_test, y_pred)
+
+col1, col2, col3 = st.columns(3)
+
+col1.metric("Accuracy", f"{accuracy:.4f}")
+col1.metric("AUC", f"{auc:.4f}")
+
+col2.metric("Precision", f"{precision:.4f}")
+col2.metric("Recall", f"{recall:.4f}")
+
+col3.metric("F1 Score", f"{f1:.4f}")
+col3.metric("MCC", f"{mcc:.4f}")
+
+# ============================================================
+# CONFUSION MATRIX
+# ============================================================
+
+st.subheader("Confusion Matrix")
+
+cm = confusion_matrix(y_test, y_pred)
+st.write(cm)
+
+# ============================================================
+# CLASSIFICATION REPORT
+# ============================================================
+
+st.subheader("Classification Report")
+
+report = classification_report(y_test, y_pred)
+st.text(report)
