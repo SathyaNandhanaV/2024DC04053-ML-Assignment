@@ -30,12 +30,17 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 
-st.set_page_config(page_title="ML Assignment 2", layout="wide")
-st.title("📊 ML Classification Models Dashboard")
+# -----------------------
+# PAGE CONFIG
+# -----------------------
+st.set_page_config(page_title="ML Classification Dashboard", layout="wide")
+st.title("🚀 ML Classification Dashboard")
 
-uploaded_file = st.file_uploader("Upload CSV Dataset", type=["csv"])
+
+uploaded_file = st.file_uploader("📂 Upload CSV Dataset", type=["csv"])
 
 if uploaded_file:
+
     df = pd.read_csv(uploaded_file)
     df.replace("?", np.nan, inplace=True)
 
@@ -45,7 +50,8 @@ if uploaded_file:
     categorical_cols = X.select_dtypes(include=["object"]).columns
     numerical_cols = X.select_dtypes(exclude=["object"]).columns
 
-    preprocessor = ColumnTransformer([
+    # Sparse Preprocessor
+    preprocessor_sparse = ColumnTransformer([
         ("num", Pipeline([
             ("imputer", SimpleImputer(strategy="median")),
             ("scaler", StandardScaler())
@@ -57,8 +63,21 @@ if uploaded_file:
         ]), categorical_cols)
     ])
 
+    # Dense for Naive Bayes
+    preprocessor_dense = ColumnTransformer([
+        ("num", Pipeline([
+            ("imputer", SimpleImputer(strategy="median")),
+            ("scaler", StandardScaler())
+        ]), numerical_cols),
+
+        ("cat", Pipeline([
+            ("imputer", SimpleImputer(strategy="most_frequent")),
+            ("encoder", OneHotEncoder(handle_unknown="ignore", sparse_output=False))
+        ]), categorical_cols)
+    ])
+
     model_option = st.selectbox(
-        "Select Model",
+        "🤖 Select Model",
         ["Logistic Regression",
          "Decision Tree",
          "KNN",
@@ -78,12 +97,17 @@ if uploaded_file:
 
     model = model_dict[model_option]
 
+    if model_option == "Naive Bayes":
+        selected_preprocessor = preprocessor_dense
+    else:
+        selected_preprocessor = preprocessor_sparse
+
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=0.2, random_state=42
     )
 
     pipeline = Pipeline([
-        ("preprocessor", preprocessor),
+        ("preprocessor", selected_preprocessor),
         ("classifier", model)
     ])
 
@@ -92,9 +116,9 @@ if uploaded_file:
     preds = pipeline.predict(X_test)
     probs = pipeline.predict_proba(X_test)[:, 1]
 
-    # ======================
+    # -----------------------
     # METRICS
-    # ======================
+    # -----------------------
     accuracy = accuracy_score(y_test, preds)
     auc = roc_auc_score(y_test, probs)
     precision = precision_score(y_test, preds)
@@ -102,65 +126,76 @@ if uploaded_file:
     f1 = f1_score(y_test, preds)
     mcc = matthews_corrcoef(y_test, preds)
 
-    st.subheader("📌 Evaluation Metrics")
+    tab1, tab2, tab3 = st.tabs(["📊 Metrics", "📈 Graphs", "🌲 Feature Importance"])
 
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Accuracy", f"{accuracy:.4f}")
-    col2.metric("AUC", f"{auc:.4f}")
-    col3.metric("Precision", f"{precision:.4f}")
+    # ===============================
+    # TAB 1 — METRICS
+    # ===============================
+    with tab1:
 
-    col4, col5, col6 = st.columns(3)
-    col4.metric("Recall", f"{recall:.4f}")
-    col5.metric("F1 Score", f"{f1:.4f}")
-    col6.metric("MCC", f"{mcc:.4f}")
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Accuracy", f"{accuracy:.4f}")
+        col2.metric("AUC", f"{auc:.4f}")
+        col3.metric("Precision", f"{precision:.4f}")
 
-    # ======================
-    # CONFUSION MATRIX
-    # ======================
-    st.subheader("📊 Confusion Matrix")
+        col4, col5, col6 = st.columns(3)
+        col4.metric("Recall", f"{recall:.4f}")
+        col5.metric("F1 Score", f"{f1:.4f}")
+        col6.metric("MCC", f"{mcc:.4f}")
 
-    cm = confusion_matrix(y_test, preds)
-    fig1, ax1 = plt.subplots()
-    sns.heatmap(cm, annot=True, fmt="d", cmap="Blues", ax=ax1)
-    ax1.set_xlabel("Predicted")
-    ax1.set_ylabel("Actual")
-    st.pyplot(fig1)
+        st.subheader("Classification Report")
+        st.text(classification_report(y_test, preds))
 
-    # ======================
-    # ROC CURVE
-    # ======================
-    st.subheader("📈 ROC Curve")
+    # ===============================
+    # TAB 2 — GRAPHS
+    # ===============================
+    with tab2:
 
-    fpr, tpr, _ = roc_curve(y_test, probs)
-    fig2, ax2 = plt.subplots()
-    ax2.plot(fpr, tpr)
-    ax2.plot([0, 1], [0, 1])
-    ax2.set_xlabel("False Positive Rate")
-    ax2.set_ylabel("True Positive Rate")
-    ax2.set_title("ROC Curve")
-    st.pyplot(fig2)
+        st.subheader("Confusion Matrix")
+        cm = confusion_matrix(y_test, preds)
+        fig1, ax1 = plt.subplots()
+        sns.heatmap(cm, annot=True, fmt="d", cmap="Blues", ax=ax1)
+        st.pyplot(fig1)
 
-    # ======================
-    # METRICS BAR CHART
-    # ======================
-    st.subheader("📊 Metrics Comparison")
+        st.subheader("ROC Curve")
+        fpr, tpr, _ = roc_curve(y_test, probs)
+        fig2, ax2 = plt.subplots()
+        ax2.plot(fpr, tpr)
+        ax2.plot([0, 1], [0, 1])
+        ax2.set_xlabel("False Positive Rate")
+        ax2.set_ylabel("True Positive Rate")
+        st.pyplot(fig2)
 
-    metrics_df = pd.DataFrame({
-        "Metric": ["Accuracy", "AUC", "Precision", "Recall", "F1", "MCC"],
-        "Value": [accuracy, auc, precision, recall, f1, mcc]
-    })
+        st.subheader("Metrics Comparison")
+        metrics_df = pd.DataFrame({
+            "Metric": ["Accuracy", "AUC", "Precision", "Recall", "F1", "MCC"],
+            "Value": [accuracy, auc, precision, recall, f1, mcc]
+        })
 
-    fig3, ax3 = plt.subplots()
-    sns.barplot(data=metrics_df, x="Metric", y="Value", ax=ax3)
-    st.pyplot(fig3)
+        fig3, ax3 = plt.subplots()
+        sns.barplot(data=metrics_df, x="Metric", y="Value", ax=ax3)
+        st.pyplot(fig3)
 
-    # ======================
-    # CLASS DISTRIBUTION
-    # ======================
-    st.subheader("📌 Class Distribution")
+    # ===============================
+    # TAB 3 — FEATURE IMPORTANCE
+    # ===============================
+    with tab3:
 
-    fig4, ax4 = plt.subplots()
-    y.value_counts().plot(kind="bar", ax=ax4)
-    ax4.set_xlabel("Class")
-    ax4.set_ylabel("Count")
-    st.pyplot(fig4)
+        if model_option in ["Random Forest", "XGBoost"]:
+
+            model_fitted = pipeline.named_steps["classifier"]
+            feature_names = pipeline.named_steps["preprocessor"].get_feature_names_out()
+
+            importances = model_fitted.feature_importances_
+
+            fi_df = pd.DataFrame({
+                "Feature": feature_names,
+                "Importance": importances
+            }).sort_values(by="Importance", ascending=False).head(15)
+
+            fig4, ax4 = plt.subplots(figsize=(8, 6))
+            sns.barplot(data=fi_df, x="Importance", y="Feature", ax=ax4)
+            st.pyplot(fig4)
+
+        else:
+            st.info("Feature importance available only for Random Forest and XGBoost.")
