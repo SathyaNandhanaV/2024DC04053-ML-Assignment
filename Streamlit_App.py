@@ -1,61 +1,22 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
 
-from sklearn.metrics import (
-    classification_report,
-    confusion_matrix,
-    accuracy_score,
-    precision_score,
-    recall_score,
-    f1_score
-)
+from sklearn.metrics import classification_report, confusion_matrix
 from sklearn.model_selection import train_test_split, cross_val_score
+from sklearn.preprocessing import LabelEncoder
+
 from model.models import get_model
 
+# Optional import for xgboost safety
+try:
+    from xgboost import XGBClassifier
+except:
+    pass
 
-# -----------------------------
-# Page Config
-# -----------------------------
-st.set_page_config(
-    page_title="Bank ML Dashboard",
-    layout="wide",
-    page_icon="📊"
-)
+st.set_page_config(page_title="Bank ML Classifier", layout="wide")
 
-# -----------------------------
-# Custom CSS
-# -----------------------------
-st.markdown("""
-<style>
-.big-metric {
-    font-size: 38px;
-    font-weight: 700;
-    text-align: center;
-}
-.metric-label {
-    font-size: 16px;
-    text-align: center;
-    color: #9CA3AF;
-}
-.metric-box {
-    background-color: #111827;
-    padding: 20px;
-    border-radius: 12px;
-}
-.section-title {
-    margin-top: 40px;
-}
-</style>
-""", unsafe_allow_html=True)
-
-# -----------------------------
-# Header
-# -----------------------------
-st.title("📊 Bank Marketing ML Dashboard")
-st.markdown("### Train and Evaluate Classification Models")
+st.title("Bank Marketing Classification App")
 
 uploaded_file = st.file_uploader("Upload CSV Dataset", type="csv")
 
@@ -64,15 +25,20 @@ if uploaded_file:
     df = pd.read_csv(uploaded_file)
     df.columns = df.columns.str.strip()
 
-    st.markdown("## 📁 Dataset Preview")
-    st.dataframe(df.head(), use_container_width=True)
+    st.subheader("Dataset Preview")
+    st.dataframe(df.head())
 
-    target_column = st.selectbox("🎯 Select Target Column", df.columns)
+    target_column = st.selectbox("Select Target Column", df.columns)
 
     if target_column:
 
         X = df.drop(target_column, axis=1)
         y = df[target_column]
+
+        # Encode target if categorical
+        if y.dtype == "object":
+            le = LabelEncoder()
+            y = le.fit_transform(y)
 
         model_name = st.selectbox(
             "Select Model",
@@ -81,7 +47,8 @@ if uploaded_file:
                 "Decision Tree",
                 "KNN",
                 "Naive Bayes",
-                "Random Forest"
+                "Random Forest",
+                "XGBoost"
             ]
         )
 
@@ -91,93 +58,28 @@ if uploaded_file:
             X, y, test_size=test_size, random_state=42
         )
 
-        with st.spinner("Training model..."):
-            model = get_model(model_name, X_train)
-            model.fit(X_train, y_train)
+        st.write("Training model...")
+
+        model = get_model(model_name, X_train)
+
+        model.fit(X_train, y_train)
 
         preds = model.predict(X_test)
 
-        # -----------------------------
-        # Metrics
-        # -----------------------------
-        accuracy = accuracy_score(y_test, preds)
-        precision = precision_score(y_test, preds, average="weighted")
-        recall = recall_score(y_test, preds, average="weighted")
-        f1 = f1_score(y_test, preds, average="weighted")
+        # ---- RESULTS ----
+        st.subheader("Cross Validation Accuracy")
 
-        cv_scores = cross_val_score(model, X, y, cv=5)
-        cv_mean = np.mean(cv_scores)
-
-        st.markdown("## 📈 Model Performance")
-
-        col1, col2, col3, col4, col5 = st.columns(5)
-
-        col1.markdown(f"""
-        <div class="metric-box">
-            <div class="metric-label">Accuracy</div>
-            <div class="big-metric">{accuracy:.3f}</div>
-        </div>
-        """, unsafe_allow_html=True)
-
-        col2.markdown(f"""
-        <div class="metric-box">
-            <div class="metric-label">Precision</div>
-            <div class="big-metric">{precision:.3f}</div>
-        </div>
-        """, unsafe_allow_html=True)
-
-        col3.markdown(f"""
-        <div class="metric-box">
-            <div class="metric-label">Recall</div>
-            <div class="big-metric">{recall:.3f}</div>
-        </div>
-        """, unsafe_allow_html=True)
-
-        col4.markdown(f"""
-        <div class="metric-box">
-            <div class="metric-label">F1 Score</div>
-            <div class="big-metric">{f1:.3f}</div>
-        </div>
-        """, unsafe_allow_html=True)
-
-        col5.markdown(f"""
-        <div class="metric-box">
-            <div class="metric-label">CV Accuracy</div>
-            <div class="big-metric">{cv_mean:.3f}</div>
-        </div>
-        """, unsafe_allow_html=True)
-
-        # -----------------------------
-        # Confusion Matrix
-        # -----------------------------
-        st.markdown("## 🧮 Confusion Matrix")
-
-        cm = confusion_matrix(y_test, preds)
-
-        fig, ax = plt.subplots(figsize=(6, 4))
-        sns.heatmap(
-            cm,
-            annot=True,
-            fmt="d",
-            cmap="YlGnBu",
-            cbar=False,
-            linewidths=1,
-            linecolor="gray",
-            annot_kws={"size": 16, "weight": "bold"}
+        cv_scores = cross_val_score(
+            get_model(model_name, X_train),
+            X,
+            y,
+            cv=5
         )
-        ax.set_xlabel("Predicted Label")
-        ax.set_ylabel("True Label")
-        st.pyplot(fig)
 
-        # -----------------------------
-        # Classification Report
-        # -----------------------------
-        st.markdown("## 📋 Classification Report")
+        st.write("Mean CV Accuracy:", round(cv_scores.mean(), 4))
 
-        report = classification_report(y_test, preds, output_dict=True)
-        report_df = pd.DataFrame(report).transpose()
+        st.subheader("Classification Report")
+        st.text(classification_report(y_test, preds))
 
-        st.dataframe(
-            report_df.style.format("{:.3f}"),
-            use_container_width=True
-        )
+        st.subheader("Confusion Matrix")
+        st.write(confusion_matrix(y_test, preds))

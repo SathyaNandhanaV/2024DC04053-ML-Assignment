@@ -1,5 +1,3 @@
-# model/models.py
-
 from sklearn.linear_model import LogisticRegression
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.neighbors import KNeighborsClassifier
@@ -34,18 +32,17 @@ def build_pipeline(model, X):
 def get_model(model_name, X):
 
     models = {
-        "Logistic Regression": LogisticRegression(max_iter=1000),
+        "Logistic Regression": LogisticRegression(max_iter=2000),
         "Decision Tree": DecisionTreeClassifier(),
         "KNN": KNeighborsClassifier(),
         "Naive Bayes": GaussianNB(),
-        "Random Forest": RandomForestClassifier(),
+        "Random Forest": RandomForestClassifier(n_estimators=100),
         "XGBoost": XGBClassifier(
             use_label_encoder=False,
             eval_metric="logloss",
-            random_state=42
+            random_state=42,
+            n_estimators=100
         )
     }
 
-    model = models[model_name]
-
-    return build_pipeline(model, X)
+    return build_pipeline(models[model_name], X)
