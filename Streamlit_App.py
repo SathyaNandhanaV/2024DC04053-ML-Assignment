@@ -8,12 +8,6 @@ from sklearn.preprocessing import LabelEncoder
 
 from model.models import get_model
 
-# Optional import for xgboost safety
-try:
-    from xgboost import XGBClassifier
-except:
-    pass
-
 st.set_page_config(page_title="Bank ML Classifier", layout="wide")
 
 st.title("Bank Marketing Classification App")
@@ -25,8 +19,12 @@ if uploaded_file:
     df = pd.read_csv(uploaded_file)
     df.columns = df.columns.str.strip()
 
+    # OPTIONAL SPEED BOOST (auto sampling if dataset large)
+    if len(df) > 20000:
+        df = df.sample(20000, random_state=42)
+
     st.subheader("Dataset Preview")
-    st.dataframe(df.head())
+    st.dataframe(df.head(), width="stretch")
 
     target_column = st.selectbox("Select Target Column", df.columns)
 
@@ -55,31 +53,41 @@ if uploaded_file:
         test_size = st.slider("Test Size", 0.1, 0.5, 0.2)
 
         X_train, X_test, y_train, y_test = train_test_split(
-            X, y, test_size=test_size, random_state=42
+            X, y,
+            test_size=test_size,
+            random_state=42
         )
 
         st.write("Training model...")
 
         model = get_model(model_name, X_train)
-
         model.fit(X_train, y_train)
 
         preds = model.predict(X_test)
 
-        # ---- RESULTS ----
+        # -------------------
+        # Cross Validation
+        # -------------------
         st.subheader("Cross Validation Accuracy")
 
         cv_scores = cross_val_score(
             get_model(model_name, X_train),
             X,
             y,
-            cv=5
+            cv=3,          # Reduced folds for speed
+            n_jobs=-1
         )
 
         st.write("Mean CV Accuracy:", round(cv_scores.mean(), 4))
 
+        # -------------------
+        # Classification Report
+        # -------------------
         st.subheader("Classification Report")
         st.text(classification_report(y_test, preds))
 
+        # -------------------
+        # Confusion Matrix
+        # -------------------
         st.subheader("Confusion Matrix")
         st.write(confusion_matrix(y_test, preds))

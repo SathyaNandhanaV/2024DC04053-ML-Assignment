@@ -17,7 +17,14 @@ def build_pipeline(model, X):
     preprocessor = ColumnTransformer(
         transformers=[
             ("num", "passthrough", numeric_cols),
-            ("cat", OneHotEncoder(handle_unknown="ignore"), categorical_cols)
+            (
+                "cat",
+                OneHotEncoder(
+                    handle_unknown="ignore",
+                    sparse_output=False  # IMPORTANT FIX FOR XGBOOST
+                ),
+                categorical_cols
+            )
         ]
     )
 
@@ -32,16 +39,33 @@ def build_pipeline(model, X):
 def get_model(model_name, X):
 
     models = {
-        "Logistic Regression": LogisticRegression(max_iter=2000),
-        "Decision Tree": DecisionTreeClassifier(),
-        "KNN": KNeighborsClassifier(),
+        "Logistic Regression": LogisticRegression(max_iter=1000),
+
+        "Decision Tree": DecisionTreeClassifier(
+            max_depth=10,
+            random_state=42
+        ),
+
+        "KNN": KNeighborsClassifier(
+            n_neighbors=5
+        ),
+
         "Naive Bayes": GaussianNB(),
-        "Random Forest": RandomForestClassifier(n_estimators=100),
+
+        "Random Forest": RandomForestClassifier(
+            n_estimators=50,      # Reduced for speed
+            max_depth=10,
+            n_jobs=-1,
+            random_state=42
+        ),
+
         "XGBoost": XGBClassifier(
-            use_label_encoder=False,
+            n_estimators=50,      # Reduced for speed
+            max_depth=6,
+            learning_rate=0.1,
+            n_jobs=-1,
             eval_metric="logloss",
-            random_state=42,
-            n_estimators=100
+            random_state=42
         )
     }
 
