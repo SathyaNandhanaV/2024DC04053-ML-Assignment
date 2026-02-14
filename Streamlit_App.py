@@ -1,16 +1,26 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
 
-from sklearn.metrics import classification_report, confusion_matrix
+from sklearn.metrics import (
+    accuracy_score,
+    precision_score,
+    recall_score,
+    f1_score,
+    matthews_corrcoef,
+    roc_auc_score,
+    classification_report,
+    confusion_matrix
+)
 from sklearn.model_selection import train_test_split, cross_val_score
 from sklearn.preprocessing import LabelEncoder
-
 from model.models import get_model
 
-st.set_page_config(page_title="Bank ML Classifier", layout="wide")
+st.set_page_config(page_title="Bank ML Dashboard", layout="wide")
 
-st.title("Bank Marketing Classification App")
+st.title("📊 Bank Marketing ML Dashboard")
 
 uploaded_file = st.file_uploader("Upload CSV Dataset", type="csv")
 
@@ -19,7 +29,7 @@ if uploaded_file:
     df = pd.read_csv(uploaded_file)
     df.columns = df.columns.str.strip()
 
-    # OPTIONAL SPEED BOOST (auto sampling if dataset large)
+    # Speed optimization
     if len(df) > 20000:
         df = df.sample(20000, random_state=42)
 
@@ -33,7 +43,7 @@ if uploaded_file:
         X = df.drop(target_column, axis=1)
         y = df[target_column]
 
-        # Encode target if categorical
+        # Encode target if needed
         if y.dtype == "object":
             le = LabelEncoder()
             y = le.fit_transform(y)
@@ -65,29 +75,65 @@ if uploaded_file:
 
         preds = model.predict(X_test)
 
-        # -------------------
-        # Cross Validation
-        # -------------------
-        st.subheader("Cross Validation Accuracy")
+        # Probability (if available)
+        if hasattr(model, "predict_proba"):
+            probs = model.predict_proba(X_test)[:, 1]
+            auc = roc_auc_score(y_test, probs)
+        else:
+            auc = None
+
+        # ---------------- METRICS ----------------
+        accuracy = accuracy_score(y_test, preds)
+        precision = precision_score(y_test, preds, average="weighted")
+        recall = recall_score(y_test, preds, average="weighted")
+        f1 = f1_score(y_test, preds, average="weighted")
+        mcc = matthews_corrcoef(y_test, preds)
 
         cv_scores = cross_val_score(
             get_model(model_name, X_train),
             X,
             y,
-            cv=3,          # Reduced folds for speed
+            cv=3,
             n_jobs=-1
         )
 
-        st.write("Mean CV Accuracy:", round(cv_scores.mean(), 4))
+        # ---------------- DISPLAY METRICS ----------------
+        st.markdown("## 📈 Model Performance")
 
-        # -------------------
-        # Classification Report
-        # -------------------
-        st.subheader("Classification Report")
-        st.text(classification_report(y_test, preds))
+        col1, col2, col3, col4, col5, col6 = st.columns(6)
 
-        # -------------------
-        # Confusion Matrix
-        # -------------------
-        st.subheader("Confusion Matrix")
-        st.write(confusion_matrix(y_test, preds))
+        col1.metric("Accuracy", f"{accuracy:.4f}")
+        col2.metric("Precision", f"{precision:.4f}")
+        col3.metric("Recall", f"{recall:.4f}")
+        col4.metric("F1 Score", f"{f1:.4f}")
+        col5.metric("MCC", f"{mcc:.4f}")
+        col6.metric("CV Accuracy", f"{cv_scores.mean():.4f}")
+
+        if auc is not None:
+            st.metric("ROC AUC", f"{auc:.4f}")
+
+        # ---------------- CONFUSION MATRIX ----------------
+        st.markdown("## 🧮 Confusion Matrix")
+
+        cm = confusion_matrix(y_test, preds)
+
+        fig, ax = plt.subplots()
+        sns.heatmap(
+            cm,
+            annot=True,
+            fmt="d",
+            cmap="Blues",
+            linewidths=1,
+            linecolor="gray"
+        )
+        ax.set_xlabel("Predicted")
+        ax.set_ylabel("Actual")
+        st.pyplot(fig)
+
+        # ---------------- CLASSIFICATION REPORT ----------------
+        st.markdown("## 📋 Classification Report")
+
+        report = classification_report(y_test, preds, output_dict=True)
+        report_df = pd.DataFrame(report).transpose()
+
+        st.dataframe(report_df.round(4), width="stretch")
