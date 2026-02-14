@@ -1,50 +1,107 @@
 # ============================================================
-# BITS ML ASSIGNMENT - FINAL STREAMLIT APP
-# Author: Sathya
+# BITS ML ASSIGNMENT - CLOUD SAFE STREAMLIT APP
 # ============================================================
 
 import streamlit as st
 import pandas as pd
-import joblib
-import os
+import numpy as np
 
-st.set_page_config(page_title="BITS ML Model Deployment", layout="wide")
+from sklearn.model_selection import train_test_split, cross_val_score
+from sklearn.preprocessing import OneHotEncoder, StandardScaler, LabelEncoder
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
+from sklearn.metrics import accuracy_score
+from sklearn.linear_model import LogisticRegression
+from sklearn.ensemble import RandomForestClassifier
+from xgboost import XGBClassifier
 
-st.title("🎓 BITS ML Assignment - Model Deployment")
-st.markdown("### 🔥 Automatic Best Model Selection")
+st.set_page_config(page_title="BITS ML Deployment", layout="wide")
+
+st.title("🎓 BITS ML Assignment - Cloud Deployment")
 
 # ============================================================
-# LOAD BEST MODEL
+# LOAD DATA
+# ============================================================
+
+@st.cache_data
+def load_data():
+    return pd.read_csv("data.csv")
+
+df = load_data()
+
+target_column = df.columns[-1]
+X = df.drop(columns=[target_column])
+y = df[target_column]
+
+# Encode target
+if y.dtype == "object":
+    le = LabelEncoder()
+    y = le.fit_transform(y)
+
+# ============================================================
+# TRAIN MODEL INSIDE STREAMLIT
 # ============================================================
 
 @st.cache_resource
-def load_best_model():
-    leaderboard = pd.read_csv("model/model_comparison.csv")
+def train_best_model():
 
-    best_model_name = leaderboard.iloc[0]["Model"]
+    numeric_cols = X.select_dtypes(include=["int64", "float64"]).columns
+    categorical_cols = X.select_dtypes(include=["object"]).columns
 
-    st.success(f"Best Model Automatically Selected: {best_model_name.upper()}")
+    preprocessor = ColumnTransformer([
+        ("num", StandardScaler(), numeric_cols),
+        ("cat", OneHotEncoder(handle_unknown="ignore"), categorical_cols)
+    ])
 
-    if best_model_name == "naive_bayes":
-        model = joblib.load(f"model/{best_model_name}.pkl")
-        preprocessor = joblib.load("model/preprocessor.pkl")
-        return best_model_name, model, preprocessor
-    else:
-        model = joblib.load(f"model/{best_model_name}.pkl")
-        return best_model_name, model, None
+    models = {
+        "Logistic Regression": LogisticRegression(max_iter=1000),
+        "Random Forest": RandomForestClassifier(
+            n_estimators=50,
+            max_depth=10,
+            random_state=42
+        ),
+        "XGBoost": XGBClassifier(
+            n_estimators=50,
+            max_depth=5,
+            learning_rate=0.1,
+            eval_metric="logloss",
+            use_label_encoder=False,
+            verbosity=0
+        )
+    }
+
+    best_score = 0
+    best_model = None
+    best_name = ""
+
+    for name, model in models.items():
+        pipeline = Pipeline([
+            ("preprocessor", preprocessor),
+            ("classifier", model)
+        ])
+
+        cv_score = cross_val_score(pipeline, X, y, cv=5, scoring="accuracy").mean()
+
+        if cv_score > best_score:
+            best_score = cv_score
+            best_model = pipeline
+            best_name = name
+
+    best_model.fit(X, y)
+
+    return best_name, best_model, best_score
 
 
-model_name, model, preprocessor = load_best_model()
+model_name, model, score = train_best_model()
+
+st.success(f"🔥 Best Model Selected: {model_name}")
+st.info(f"Cross Validation Accuracy: {score:.4f}")
 
 # ============================================================
-# LOAD DATA FOR INPUT STRUCTURE
+# USER INPUT
 # ============================================================
 
-df = pd.read_csv("data.csv")
-target_column = df.columns[-1]
-X = df.drop(columns=[target_column])
-
-st.sidebar.header("Enter Input Features")
+st.sidebar.header("Enter Feature Values")
 
 user_input = {}
 
@@ -52,7 +109,7 @@ for column in X.columns:
     if X[column].dtype == "object":
         user_input[column] = st.sidebar.selectbox(
             column,
-            options=sorted(X[column].unique())
+            sorted(X[column].unique())
         )
     else:
         user_input[column] = st.sidebar.number_input(
@@ -70,22 +127,8 @@ st.subheader("Prediction")
 
 if st.button("Predict"):
 
-    if model_name == "naive_bayes":
-        processed_input = preprocessor.transform(input_df).toarray()
-        prediction = model.predict(processed_input)[0]
-        probability = model.predict_proba(processed_input)[0][1]
-    else:
-        prediction = model.predict(input_df)[0]
-        probability = model.predict_proba(input_df)[0][1]
+    prediction = model.predict(input_df)[0]
+    probability = model.predict_proba(input_df)[0][1]
 
     st.success(f"Predicted Class: {prediction}")
     st.info(f"Prediction Probability: {probability:.4f}")
-
-# ============================================================
-# LEADERBOARD DISPLAY
-# ============================================================
-
-st.subheader("📊 Model Leaderboard")
-
-leaderboard = pd.read_csv("model/model_comparison.csv")
-st.dataframe(leaderboard, use_container_width=True)
