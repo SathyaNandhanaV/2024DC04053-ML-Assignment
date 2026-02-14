@@ -1,76 +1,147 @@
+# ============================================================
+# ML Assignment 2 - Streamlit App
+# ============================================================
+
 import streamlit as st
 import pandas as pd
 import joblib
 import os
 
-from sklearn.metrics import accuracy_score, confusion_matrix, classification_report
+from sklearn.metrics import (
+    accuracy_score,
+    precision_score,
+    recall_score,
+    f1_score,
+    roc_auc_score,
+    matthews_corrcoef,
+    confusion_matrix,
+    classification_report
+)
 
-st.set_page_config(page_title="ML Assignment 2")
+# ------------------------------------------------------------
+# Page Config
+# ------------------------------------------------------------
 
-st.title("Machine Learning Assignment 2")
+st.set_page_config(
+    page_title="ML Assignment 2",
+    page_icon="📊",
+    layout="wide"
+)
 
-# ============================
-# LOAD MODELS (WITHOUT XGBOOST)
-# ============================
+st.title("📊 Machine Learning Classification Models")
+st.markdown("Evaluate multiple trained classification models")
+
+# ------------------------------------------------------------
+# Load Models
+# ------------------------------------------------------------
 
 @st.cache_resource
 def load_models():
-    models = {}
-    files = [
+    model_dict = {}
+    model_folder = "model"
+
+    model_files = [
         "logistic.pkl",
         "decision_tree.pkl",
         "knn.pkl",
         "naive_bayes.pkl",
-        "random_forest.pkl"
+        "random_forest.pkl",
+        "xgboost.pkl"
     ]
 
-    for f in files:
-        path = os.path.join("model", f)
+    for file in model_files:
+        path = os.path.join(model_folder, file)
         if os.path.exists(path):
-            models[f.replace(".pkl", "")] = joblib.load(path)
+            model_name = file.replace(".pkl", "")
+            model_dict[model_name] = joblib.load(path)
 
-    return models
+    return model_dict
+
 
 models = load_models()
 
 if not models:
-    st.error("No models found.")
+    st.error("❌ No models found in 'model/' folder.")
     st.stop()
 
-# ============================
-# UPLOAD DATA
-# ============================
+# ------------------------------------------------------------
+# Dataset Upload
+# ------------------------------------------------------------
 
-uploaded_file = st.file_uploader("Upload Test CSV", type=["csv"])
+st.header("📂 Upload Test Dataset (CSV)")
+uploaded_file = st.file_uploader("Upload CSV file", type=["csv"])
 
 if uploaded_file is None:
+    st.info("Please upload a CSV file to continue.")
     st.stop()
 
 data = pd.read_csv(uploaded_file)
 
-target = data.columns[-1]
-X_test = data.drop(columns=[target])
-y_test = data[target]
+st.success("✅ Dataset uploaded successfully")
+st.write("Dataset shape:", data.shape)
 
-# ============================
-# MODEL SELECTION
-# ============================
+# Assume last column is target
+target_column = data.columns[-1]
+X_test = data.drop(columns=[target_column])
+y_test = data[target_column]
 
-model_name = st.selectbox("Select Model", list(models.keys()))
-model = models[model_name]
+# ------------------------------------------------------------
+# Model Selection
+# ------------------------------------------------------------
 
-# ============================
-# EVALUATION
-# ============================
+st.header("🤖 Select Model")
 
-y_pred = model.predict(X_test)
+selected_model_name = st.selectbox(
+    "Choose a classification model:",
+    list(models.keys())
+)
 
+model = models[selected_model_name]
+
+# ------------------------------------------------------------
+# Evaluation
+# ------------------------------------------------------------
+
+st.header("📈 Model Evaluation")
+
+try:
+    y_pred = model.predict(X_test)
+    y_prob = model.predict_proba(X_test)[:, 1]
+except Exception as e:
+    st.error("⚠️ Prediction failed. Ensure test dataset matches training features.")
+    st.stop()
+
+# Metrics
 accuracy = accuracy_score(y_test, y_pred)
+precision = precision_score(y_test, y_pred, average="weighted")
+recall = recall_score(y_test, y_pred, average="weighted")
+f1 = f1_score(y_test, y_pred, average="weighted")
+auc = roc_auc_score(y_test, y_prob)
+mcc = matthews_corrcoef(y_test, y_pred)
 
-st.metric("Accuracy", f"{accuracy:.4f}")
+col1, col2, col3 = st.columns(3)
 
-st.subheader("Confusion Matrix")
-st.write(confusion_matrix(y_test, y_pred))
+col1.metric("Accuracy", f"{accuracy:.4f}")
+col1.metric("AUC Score", f"{auc:.4f}")
 
-st.subheader("Classification Report")
-st.text(classification_report(y_test, y_pred))
+col2.metric("Precision", f"{precision:.4f}")
+col2.metric("Recall", f"{recall:.4f}")
+
+col3.metric("F1 Score", f"{f1:.4f}")
+col3.metric("MCC Score", f"{mcc:.4f}")
+
+# ------------------------------------------------------------
+# Confusion Matrix
+# ------------------------------------------------------------
+
+st.subheader("🔎 Confusion Matrix")
+cm = confusion_matrix(y_test, y_pred)
+st.dataframe(cm)
+
+# ------------------------------------------------------------
+# Classification Report
+# ------------------------------------------------------------
+
+st.subheader("📋 Classification Report")
+report = classification_report(y_test, y_pred)
+st.text(report)
