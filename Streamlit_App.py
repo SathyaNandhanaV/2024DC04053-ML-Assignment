@@ -1,25 +1,17 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-from PIL import Image
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, cross_val_score
 from sklearn.pipeline import Pipeline
 from sklearn.compose import ColumnTransformer
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from sklearn.impute import SimpleImputer
 from sklearn.metrics import (
-    classification_report,
-    confusion_matrix,
-    roc_curve,
-    roc_auc_score,
-    accuracy_score,
-    precision_score,
-    recall_score,
-    f1_score,
-    matthews_corrcoef
+    accuracy_score, precision_score, recall_score,
+    f1_score, roc_auc_score, confusion_matrix
 )
 
 from sklearn.linear_model import LogisticRegression
@@ -29,75 +21,53 @@ from sklearn.naive_bayes import GaussianNB
 from sklearn.ensemble import RandomForestClassifier
 from xgboost import XGBClassifier
 
-
 # ---------------------------------------------------
 # PAGE CONFIG
 # ---------------------------------------------------
 st.set_page_config(
-    page_title="BITS ML Dashboard",
+    page_title="2024DC04053 ML Assignment-1",
     page_icon="🎓",
     layout="wide"
 )
 
 # ---------------------------------------------------
-# BITS THEME STYLING (Blue + Gold)
+# BITS THEME STYLING
 # ---------------------------------------------------
 st.markdown("""
 <style>
-    .main {
-        background-color: #f5f7fa;
-    }
-    h1, h2, h3 {
-        color: #003366;
-    }
-    .stMetric {
-        background-color: white;
-        padding: 10px;
-        border-radius: 10px;
-        border-left: 5px solid #d4af37;
-    }
-    footer {visibility: hidden;}
+.main {background-color: #f5f7fa;}
+h1 {color:#003366;}
+h3 {color:#d4af37;}
+.stMetric {
+    background-color:white;
+    padding:10px;
+    border-radius:10px;
+    border-left:5px solid #d4af37;
+}
+footer {visibility:hidden;}
 </style>
 """, unsafe_allow_html=True)
 
 # ---------------------------------------------------
-# HEADER WITH LOGO
+# HEADER
 # ---------------------------------------------------
-logo = Image.open("bits.png")
-
-col1, col2 = st.columns([1.2, 5])
-
-with col1:
-    st.image(logo, width=160)
-
-with col2:
-    st.markdown("""
-        <h1 style='margin-bottom:0;'>BITS Pilani</h1>
-        <h3 style='margin-top:0; color:#d4af37;'>
-        Work Integrated Learning Programme
-        </h3>
-        <h2>Machine Learning Classification Dashboard</h2>
-    """, unsafe_allow_html=True)
-
-st.markdown("---")
+st.markdown("""
+<div style="text-align:center;">
+    <h1>BITS Pilani</h1>
+    <h3>Work Integrated Learning Programme</h3>
+    <h2>Machine Learning Classification Dashboard</h2>
+</div>
+<hr>
+""", unsafe_allow_html=True)
 
 # ---------------------------------------------------
 # SIDEBAR
 # ---------------------------------------------------
-st.sidebar.image(logo, width=120)
-st.sidebar.title("🎓 ML Assignment-2")
+st.sidebar.title("🎓 Dashboard Controls")
 
 uploaded_file = st.sidebar.file_uploader("Upload CSV Dataset", type=["csv"])
 
-model_option = st.sidebar.selectbox(
-    "Select Model",
-    ["Logistic Regression",
-     "Decision Tree",
-     "KNN",
-     "Naive Bayes",
-     "Random Forest",
-     "XGBoost"]
-)
+cv_folds = st.sidebar.slider("Cross Validation Folds", 3, 10, 5)
 
 # ---------------------------------------------------
 # MAIN LOGIC
@@ -107,8 +77,13 @@ if uploaded_file:
     df = pd.read_csv(uploaded_file)
     df.replace("?", np.nan, inplace=True)
 
-    X = df.drop("income", axis=1)
-    y = df["income"].map({"<=50K": 0, ">50K": 1})
+    target_column = st.sidebar.selectbox("Select Target Column", df.columns)
+
+    X = df.drop(target_column, axis=1)
+    y = df[target_column]
+
+    if y.dtype == "object":
+        y = y.astype("category").cat.codes
 
     categorical_cols = X.select_dtypes(include=["object"]).columns
     numerical_cols = X.select_dtypes(exclude=["object"]).columns
@@ -137,116 +112,107 @@ if uploaded_file:
         ]), categorical_cols)
     ])
 
-    model_dict = {
-        "Logistic Regression": LogisticRegression(max_iter=1000, solver="liblinear"),
+    models = {
+        "Logistic Regression": LogisticRegression(max_iter=1000),
         "Decision Tree": DecisionTreeClassifier(max_depth=10),
         "KNN": KNeighborsClassifier(n_neighbors=5),
         "Naive Bayes": GaussianNB(),
-        "Random Forest": RandomForestClassifier(n_estimators=100, max_depth=10),
+        "Random Forest": RandomForestClassifier(n_estimators=100),
         "XGBoost": XGBClassifier(eval_metric="logloss")
     }
 
-    model = model_dict[model_option]
+    results = []
 
-    selected_preprocessor = preprocessor_dense if model_option == "Naive Bayes" else preprocessor_sparse
+    st.subheader("🚀 Training All Models...")
+
+    for name, model in models.items():
+
+        preprocessor = preprocessor_dense if name == "Naive Bayes" else preprocessor_sparse
+
+        pipeline = Pipeline([
+            ("preprocessor", preprocessor),
+            ("classifier", model)
+        ])
+
+        X_train, X_test, y_train, y_test = train_test_split(
+            X, y, test_size=0.2, random_state=42
+        )
+
+        pipeline.fit(X_train, y_train)
+        preds = pipeline.predict(X_test)
+        probs = pipeline.predict_proba(X_test)[:, 1] if len(np.unique(y)) == 2 else None
+
+        accuracy = accuracy_score(y_test, preds)
+        precision = precision_score(y_test, preds, average="weighted")
+        recall = recall_score(y_test, preds, average="weighted")
+        f1 = f1_score(y_test, preds, average="weighted")
+
+        auc = roc_auc_score(y_test, probs) if probs is not None else 0
+
+        cv_scores = cross_val_score(pipeline, X, y, cv=cv_folds, scoring="accuracy")
+
+        results.append({
+            "Model": name,
+            "Accuracy": accuracy,
+            "Precision": precision,
+            "Recall": recall,
+            "F1 Score": f1,
+            "AUC": auc,
+            "CV Mean Accuracy": cv_scores.mean()
+        })
+
+    results_df = pd.DataFrame(results).sort_values(
+        by="CV Mean Accuracy", ascending=False
+    )
+
+    # ---------------------------------------------------
+    # LEADERBOARD
+    # ---------------------------------------------------
+    st.subheader("🏆 Multi-Model Leaderboard (Ranked by CV Accuracy)")
+    st.dataframe(results_df, use_container_width=True)
+
+    # ---------------------------------------------------
+    # BAR CHART COMPARISON
+    # ---------------------------------------------------
+    st.subheader("📊 Model Performance Comparison")
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+    sns.barplot(
+        data=results_df,
+        x="CV Mean Accuracy",
+        y="Model",
+        ax=ax
+    )
+    ax.set_title("Cross-Validation Accuracy Comparison")
+    st.pyplot(fig)
+
+    # ---------------------------------------------------
+    # BEST MODEL DETAILS
+    # ---------------------------------------------------
+    best_model_name = results_df.iloc[0]["Model"]
+    st.subheader(f"🥇 Best Model: {best_model_name}")
+
+    best_model = models[best_model_name]
+    best_preprocessor = preprocessor_dense if best_model_name == "Naive Bayes" else preprocessor_sparse
+
+    best_pipeline = Pipeline([
+        ("preprocessor", best_preprocessor),
+        ("classifier", best_model)
+    ])
 
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=0.2, random_state=42
     )
 
-    pipeline = Pipeline([
-        ("preprocessor", selected_preprocessor),
-        ("classifier", model)
-    ])
+    best_pipeline.fit(X_train, y_train)
+    preds = best_pipeline.predict(X_test)
 
-    pipeline.fit(X_train, y_train)
+    cm = confusion_matrix(y_test, preds)
 
-    preds = pipeline.predict(X_test)
-    probs = pipeline.predict_proba(X_test)[:, 1]
+    fig2, ax2 = plt.subplots()
+    sns.heatmap(cm, annot=True, fmt="d", cmap="Blues", ax=ax2)
+    ax2.set_title("Confusion Matrix (Best Model)")
+    st.pyplot(fig2)
 
-    # ---------------------------------------------------
-    # METRICS
-    # ---------------------------------------------------
-    accuracy = accuracy_score(y_test, preds)
-    auc = roc_auc_score(y_test, probs)
-    precision = precision_score(y_test, preds)
-    recall = recall_score(y_test, preds)
-    f1 = f1_score(y_test, preds)
-    mcc = matthews_corrcoef(y_test, preds)
-
-    tab1, tab2, tab3 = st.tabs(["📊 Metrics", "📈 Graphs", "🌲 Feature Importance"])
-
-    # ------------------ TAB 1 ------------------
-    with tab1:
-
-        col1, col2, col3 = st.columns(3)
-        col1.metric("Accuracy", f"{accuracy:.4f}")
-        col2.metric("AUC", f"{auc:.4f}")
-        col3.metric("Precision", f"{precision:.4f}")
-
-        col4, col5, col6 = st.columns(3)
-        col4.metric("Recall", f"{recall:.4f}")
-        col5.metric("F1 Score", f"{f1:.4f}")
-        col6.metric("MCC", f"{mcc:.4f}")
-
-        st.subheader("Classification Report")
-        st.text(classification_report(y_test, preds))
-
-    # ------------------ TAB 2 ------------------
-    with tab2:
-
-        st.subheader("Confusion Matrix")
-        cm = confusion_matrix(y_test, preds)
-        fig1, ax1 = plt.subplots()
-        sns.heatmap(cm, annot=True, fmt="d", cmap="Blues", ax=ax1)
-        st.pyplot(fig1)
-
-        st.subheader("ROC Curve")
-        fpr, tpr, _ = roc_curve(y_test, probs)
-        fig2, ax2 = plt.subplots()
-        ax2.plot(fpr, tpr)
-        ax2.plot([0, 1], [0, 1])
-        ax2.set_xlabel("False Positive Rate")
-        ax2.set_ylabel("True Positive Rate")
-        st.pyplot(fig2)
-
-        st.subheader("Metrics Comparison")
-        metrics_df = pd.DataFrame({
-            "Metric": ["Accuracy", "AUC", "Precision", "Recall", "F1", "MCC"],
-            "Value": [accuracy, auc, precision, recall, f1, mcc]
-        })
-
-        fig3, ax3 = plt.subplots()
-        sns.barplot(data=metrics_df, x="Metric", y="Value", ax=ax3)
-        st.pyplot(fig3)
-
-    # ------------------ TAB 3 ------------------
-    with tab3:
-
-        if model_option in ["Random Forest", "XGBoost"]:
-
-            model_fitted = pipeline.named_steps["classifier"]
-            feature_names = pipeline.named_steps["preprocessor"].get_feature_names_out()
-
-            importances = model_fitted.feature_importances_
-
-            fi_df = pd.DataFrame({
-                "Feature": feature_names,
-                "Importance": importances
-            }).sort_values(by="Importance", ascending=False).head(15)
-
-            fig4, ax4 = plt.subplots(figsize=(8, 6))
-            sns.barplot(data=fi_df, x="Importance", y="Feature", ax=ax4)
-            st.pyplot(fig4)
-
-        else:
-            st.info("Feature importance available only for Random Forest and XGBoost.")
-
-# ---------------------------------------------------
-# FOOTER
-# ---------------------------------------------------
-st.markdown("---")
-st.markdown(
-    "<center><b>BITS Pilani – WILP | Machine Learning Assignment Dashboard</b></center>",
-    unsafe_allow_html=True
-)
+else:
+    st.info("👈 Upload a dataset to begin.")
