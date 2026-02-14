@@ -8,6 +8,7 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.pipeline import Pipeline
 from sklearn.compose import ColumnTransformer
 from sklearn.preprocessing import OneHotEncoder
+from xgboost import XGBClassifier
 
 
 def build_pipeline(model, X):
@@ -37,7 +38,12 @@ def get_model(model_name, X):
         "Decision Tree": DecisionTreeClassifier(),
         "KNN": KNeighborsClassifier(),
         "Naive Bayes": GaussianNB(),
-        "Random Forest": RandomForestClassifier()
+        "Random Forest": RandomForestClassifier(),
+        "XGBoost": XGBClassifier(
+            use_label_encoder=False,
+            eval_metric="logloss",
+            random_state=42
+        )
     }
 
     model = models[model_name]
