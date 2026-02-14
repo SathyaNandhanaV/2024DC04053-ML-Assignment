@@ -1,147 +1,76 @@
-# ============================================================
-# ML Assignment 2 - Streamlit App
-# ============================================================
-
 import streamlit as st
 import pandas as pd
 import joblib
 import os
+from sklearn.metrics import classification_report, confusion_matrix
 
-from sklearn.metrics import (
-    accuracy_score,
-    precision_score,
-    recall_score,
-    f1_score,
-    roc_auc_score,
-    matthews_corrcoef,
-    confusion_matrix,
-    classification_report
-)
+st.set_page_config(page_title="Bank ML Classifier", layout="wide")
 
-# ------------------------------------------------------------
-# Page Config
-# ------------------------------------------------------------
+st.title("📊 ML-Assignment-2")
+st.markdown("Upload a test dataset and evaluate trained ML models.")
 
-st.set_page_config(
-    page_title="ML Assignment 2",
-    page_icon="📊",
-    layout="wide"
-)
+# -----------------------
+# Model Selection
+# -----------------------
 
-st.title("📊 Machine Learning Classification Models")
-st.markdown("Evaluate multiple trained classification models")
+MODEL_FILES = {
+    "Logistic Regression": "logistic_regression.pkl",
+    "Decision Tree": "decision_tree.pkl",
+    "KNN": "knn.pkl",
+    "Naive Bayes": "naive_bayes.pkl",
+    "Random Forest": "random_forest.pkl",
+    "XGBoost": "xgboost.pkl",
+}
 
-# ------------------------------------------------------------
-# Load Models
-# ------------------------------------------------------------
+model_option = st.selectbox("Select Model", list(MODEL_FILES.keys()))
+
+uploaded_file = st.file_uploader("Upload Test CSV File", type="csv")
+
+# -----------------------
+# Load Model Function
+# -----------------------
 
 @st.cache_resource
-def load_models():
-    model_dict = {}
-    model_folder = "model"
+def load_model(path):
+    return joblib.load(path)
 
-    model_files = [
-        "logistic.pkl",
-        "decision_tree.pkl",
-        "knn.pkl",
-        "naive_bayes.pkl",
-        "random_forest.pkl",
-        "xgboost.pkl"
-    ]
+# -----------------------
+# Main Logic
+# -----------------------
 
-    for file in model_files:
-        path = os.path.join(model_folder, file)
-        if os.path.exists(path):
-            model_name = file.replace(".pkl", "")
-            model_dict[model_name] = joblib.load(path)
+if uploaded_file is not None:
 
-    return model_dict
+    try:
+        df = pd.read_csv(uploaded_file)
+        df.columns = df.columns.str.strip()
 
+        st.success("File uploaded successfully!")
 
-models = load_models()
+        st.write("### Dataset Preview")
+        st.dataframe(df.head())
 
-if not models:
-    st.error("❌ No models found in 'model/' folder.")
-    st.stop()
+        target_column = st.selectbox("Select Target Column", df.columns)
 
-# ------------------------------------------------------------
-# Dataset Upload
-# ------------------------------------------------------------
+        if target_column:
 
-st.header("📂 Upload Test Dataset (CSV)")
-uploaded_file = st.file_uploader("Upload CSV file", type=["csv"])
+            X = df.drop(target_column, axis=1)
+            y = df[target_column]
 
-if uploaded_file is None:
-    st.info("Please upload a CSV file to continue.")
-    st.stop()
+            model_path = os.path.join("models", MODEL_FILES[model_option])
 
-data = pd.read_csv(uploaded_file)
+            if not os.path.exists(model_path):
+                st.error(f"Model file not found: {model_path}")
+                st.stop()
 
-st.success("✅ Dataset uploaded successfully")
-st.write("Dataset shape:", data.shape)
+            model = load_model(model_path)
 
-# Assume last column is target
-target_column = data.columns[-1]
-X_test = data.drop(columns=[target_column])
-y_test = data[target_column]
+            preds = model.predict(X)
 
-# ------------------------------------------------------------
-# Model Selection
-# ------------------------------------------------------------
+            st.subheader("📈 Classification Report")
+            st.text(classification_report(y, preds))
 
-st.header("🤖 Select Model")
+            st.subheader("🧮 Confusion Matrix")
+            st.write(confusion_matrix(y, preds))
 
-selected_model_name = st.selectbox(
-    "Choose a classification model:",
-    list(models.keys())
-)
-
-model = models[selected_model_name]
-
-# ------------------------------------------------------------
-# Evaluation
-# ------------------------------------------------------------
-
-st.header("📈 Model Evaluation")
-
-try:
-    y_pred = model.predict(X_test)
-    y_prob = model.predict_proba(X_test)[:, 1]
-except Exception as e:
-    st.error("⚠️ Prediction failed. Ensure test dataset matches training features.")
-    st.stop()
-
-# Metrics
-accuracy = accuracy_score(y_test, y_pred)
-precision = precision_score(y_test, y_pred, average="weighted")
-recall = recall_score(y_test, y_pred, average="weighted")
-f1 = f1_score(y_test, y_pred, average="weighted")
-auc = roc_auc_score(y_test, y_prob)
-mcc = matthews_corrcoef(y_test, y_pred)
-
-col1, col2, col3 = st.columns(3)
-
-col1.metric("Accuracy", f"{accuracy:.4f}")
-col1.metric("AUC Score", f"{auc:.4f}")
-
-col2.metric("Precision", f"{precision:.4f}")
-col2.metric("Recall", f"{recall:.4f}")
-
-col3.metric("F1 Score", f"{f1:.4f}")
-col3.metric("MCC Score", f"{mcc:.4f}")
-
-# ------------------------------------------------------------
-# Confusion Matrix
-# ------------------------------------------------------------
-
-st.subheader("🔎 Confusion Matrix")
-cm = confusion_matrix(y_test, y_pred)
-st.dataframe(cm)
-
-# ------------------------------------------------------------
-# Classification Report
-# ------------------------------------------------------------
-
-st.subheader("📋 Classification Report")
-report = classification_report(y_test, y_pred)
-st.text(report)
+    except Exception as e:
+        st.error(f"Error processing file: {e}")
