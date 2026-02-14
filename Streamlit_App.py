@@ -18,9 +18,13 @@ from sklearn.model_selection import train_test_split, cross_val_score
 from sklearn.preprocessing import LabelEncoder
 from model.models import get_model
 
-st.set_page_config(page_title="Bank ML Dashboard", layout="wide")
 
+# ---------------------------
+# Page Setup
+# ---------------------------
+st.set_page_config(page_title="Bank ML Dashboard", layout="wide")
 st.title("📊 Bank Marketing ML Dashboard")
+st.markdown("Configure model settings and click **Train Model** to run.")
 
 uploaded_file = st.file_uploader("Upload CSV Dataset", type="csv")
 
@@ -33,34 +37,49 @@ if uploaded_file:
     if len(df) > 20000:
         df = df.sample(20000, random_state=42)
 
-    st.subheader("Dataset Preview")
+    st.subheader("📁 Dataset Preview")
     st.dataframe(df.head(), width="stretch")
 
-    target_column = st.selectbox("Select Target Column", df.columns)
+    # ---------------------------
+    # FORM SECTION
+    # ---------------------------
+    with st.form("model_form"):
 
-    if target_column:
+        st.markdown("### ⚙️ Model Configuration")
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+            target_column = st.selectbox("Select Target Column", df.columns)
+
+        with col2:
+            model_name = st.selectbox(
+                "Select Model",
+                [
+                    "Logistic Regression",
+                    "Decision Tree",
+                    "KNN",
+                    "Naive Bayes",
+                    "Random Forest",
+                    "XGBoost"
+                ]
+            )
+
+        test_size = st.slider("Test Size", 0.1, 0.5, 0.2)
+
+        submit_button = st.form_submit_button("🚀 Train Model")
+
+    # ---------------------------
+    # TRAIN ONLY AFTER BUTTON
+    # ---------------------------
+    if submit_button:
 
         X = df.drop(target_column, axis=1)
         y = df[target_column]
 
-        # Encode target if needed
         if y.dtype == "object":
             le = LabelEncoder()
             y = le.fit_transform(y)
-
-        model_name = st.selectbox(
-            "Select Model",
-            [
-                "Logistic Regression",
-                "Decision Tree",
-                "KNN",
-                "Naive Bayes",
-                "Random Forest",
-                "XGBoost"
-            ]
-        )
-
-        test_size = st.slider("Test Size", 0.1, 0.5, 0.2)
 
         X_train, X_test, y_train, y_test = train_test_split(
             X, y,
@@ -68,36 +87,36 @@ if uploaded_file:
             random_state=42
         )
 
-        st.write("Training model...")
+        with st.spinner("Training model... Please wait..."):
 
-        model = get_model(model_name, X_train)
-        model.fit(X_train, y_train)
+            model = get_model(model_name, X_train)
+            model.fit(X_train, y_train)
 
-        preds = model.predict(X_test)
+            preds = model.predict(X_test)
 
-        # Probability (if available)
-        if hasattr(model, "predict_proba"):
-            probs = model.predict_proba(X_test)[:, 1]
-            auc = roc_auc_score(y_test, probs)
-        else:
-            auc = None
+            if hasattr(model, "predict_proba"):
+                probs = model.predict_proba(X_test)[:, 1]
+                auc = roc_auc_score(y_test, probs)
+            else:
+                auc = None
 
-        # ---------------- METRICS ----------------
+            cv_scores = cross_val_score(
+                get_model(model_name, X_train),
+                X,
+                y,
+                cv=3,
+                n_jobs=-1
+            )
+
+        # ---------------------------
+        # METRICS
+        # ---------------------------
         accuracy = accuracy_score(y_test, preds)
         precision = precision_score(y_test, preds, average="weighted")
         recall = recall_score(y_test, preds, average="weighted")
         f1 = f1_score(y_test, preds, average="weighted")
         mcc = matthews_corrcoef(y_test, preds)
 
-        cv_scores = cross_val_score(
-            get_model(model_name, X_train),
-            X,
-            y,
-            cv=3,
-            n_jobs=-1
-        )
-
-        # ---------------- DISPLAY METRICS ----------------
         st.markdown("## 📈 Model Performance")
 
         col1, col2, col3, col4, col5, col6 = st.columns(6)
@@ -112,7 +131,9 @@ if uploaded_file:
         if auc is not None:
             st.metric("ROC AUC", f"{auc:.4f}")
 
-        # ---------------- CONFUSION MATRIX ----------------
+        # ---------------------------
+        # CONFUSION MATRIX
+        # ---------------------------
         st.markdown("## 🧮 Confusion Matrix")
 
         cm = confusion_matrix(y_test, preds)
@@ -130,7 +151,9 @@ if uploaded_file:
         ax.set_ylabel("Actual")
         st.pyplot(fig)
 
-        # ---------------- CLASSIFICATION REPORT ----------------
+        # ---------------------------
+        # CLASSIFICATION REPORT
+        # ---------------------------
         st.markdown("## 📋 Classification Report")
 
         report = classification_report(y_test, preds, output_dict=True)
