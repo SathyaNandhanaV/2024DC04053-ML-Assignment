@@ -1,76 +1,52 @@
 import streamlit as st
 import pandas as pd
-import joblib
-import os
 from sklearn.metrics import classification_report, confusion_matrix
+
+from model.logistic_regression import get_model as lr_model
+from model.decision_tree import get_model as dt_model
+from model.knn import get_model as knn_model
+from model.naive_bayes import get_model as nb_model
+from model.random_forest import get_model as rf_model
 
 st.set_page_config(page_title="Bank ML Classifier", layout="wide")
 
-st.title("📊 ML-Assignment-2")
-st.markdown("Upload a test dataset and evaluate trained ML models.")
+st.title("📊 Bank Marketing Classification App")
 
-# -----------------------
-# Model Selection
-# -----------------------
-
-MODEL_FILES = {
-    "Logistic Regression": "logistic_regression.pkl",
-    "Decision Tree": "decision_tree.pkl",
-    "KNN": "knn.pkl",
-    "Naive Bayes": "naive_bayes.pkl",
-    "Random Forest": "random_forest.pkl",
-    "XGBoost": "xgboost.pkl",
+MODEL_MAP = {
+    "Logistic Regression": lr_model,
+    "Decision Tree": dt_model,
+    "KNN": knn_model,
+    "Naive Bayes": nb_model,
+    "Random Forest": rf_model,
 }
 
-model_option = st.selectbox("Select Model", list(MODEL_FILES.keys()))
+model_option = st.selectbox("Select Model", list(MODEL_MAP.keys()))
 
-uploaded_file = st.file_uploader("Upload Test CSV File", type="csv")
+uploaded_file = st.file_uploader("Upload CSV File", type="csv")
 
-# -----------------------
-# Load Model Function
-# -----------------------
+if uploaded_file:
 
-@st.cache_resource
-def load_model(path):
-    return joblib.load(path)
+    df = pd.read_csv(uploaded_file)
+    df.columns = df.columns.str.strip()
 
-# -----------------------
-# Main Logic
-# -----------------------
+    st.write("Dataset Preview")
+    st.dataframe(df.head())
 
-if uploaded_file is not None:
+    target_column = st.selectbox("Select Target Column", df.columns)
 
-    try:
-        df = pd.read_csv(uploaded_file)
-        df.columns = df.columns.str.strip()
+    if target_column:
 
-        st.success("File uploaded successfully!")
+        X = df.drop(target_column, axis=1)
+        y = df[target_column]
 
-        st.write("### Dataset Preview")
-        st.dataframe(df.head())
+        with st.spinner("Training model..."):
+            model = MODEL_MAP[model_option](X)
+            model.fit(X, y)
 
-        target_column = st.selectbox("Select Target Column", df.columns)
+        preds = model.predict(X)
 
-        if target_column:
+        st.subheader("📈 Classification Report")
+        st.text(classification_report(y, preds))
 
-            X = df.drop(target_column, axis=1)
-            y = df[target_column]
-
-            model_path = os.path.join("models", MODEL_FILES[model_option])
-
-            if not os.path.exists(model_path):
-                st.error(f"Model file not found: {model_path}")
-                st.stop()
-
-            model = load_model(model_path)
-
-            preds = model.predict(X)
-
-            st.subheader("📈 Classification Report")
-            st.text(classification_report(y, preds))
-
-            st.subheader("🧮 Confusion Matrix")
-            st.write(confusion_matrix(y, preds))
-
-    except Exception as e:
-        st.error(f"Error processing file: {e}")
+        st.subheader("🧮 Confusion Matrix")
+        st.write(confusion_matrix(y, preds))
