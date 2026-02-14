@@ -19,12 +19,61 @@ from sklearn.preprocessing import LabelEncoder
 from model.models import get_model
 
 
-# ---------------------------
-# Page Setup
-# ---------------------------
-st.set_page_config(page_title="Bank ML Dashboard", layout="wide")
-st.title("📊 Bank Marketing ML Dashboard")
-st.markdown("Configure model settings and click **Train Model** to run.")
+# -------------------------------------------------
+# PAGE CONFIG
+# -------------------------------------------------
+st.set_page_config(page_title="BITS ML Dashboard", layout="wide")
+
+# -------------------------------------------------
+# BITS THEME CSS
+# -------------------------------------------------
+st.markdown("""
+<style>
+body {
+    background-color: #0B1F3A;
+}
+
+h1, h2, h3 {
+    color: #F5A623;
+}
+
+.metric-box {
+    background-color: #13294B;
+    padding: 20px;
+    border-radius: 12px;
+    text-align: center;
+    border: 1px solid #1E3A8A;
+}
+
+.metric-label {
+    font-size: 14px;
+    color: #AFCBFF;
+}
+
+.metric-value {
+    font-size: 32px;
+    font-weight: bold;
+    color: #F5A623;
+}
+
+.stButton>button {
+    background-color: #F5A623;
+    color: black;
+    font-weight: bold;
+    border-radius: 8px;
+}
+
+.stSelectbox label, .stSlider label {
+    color: #F5A623 !important;
+}
+</style>
+""", unsafe_allow_html=True)
+
+# -------------------------------------------------
+# HEADER
+# -------------------------------------------------
+st.title("📊 BITS Pilani – Machine Learning Dashboard")
+st.markdown("Configure model settings and click **Train Model**.")
 
 uploaded_file = st.file_uploader("Upload CSV Dataset", type="csv")
 
@@ -40,9 +89,9 @@ if uploaded_file:
     st.subheader("📁 Dataset Preview")
     st.dataframe(df.head(), width="stretch")
 
-    # ---------------------------
+    # -------------------------------------------------
     # FORM SECTION
-    # ---------------------------
+    # -------------------------------------------------
     with st.form("model_form"):
 
         st.markdown("### ⚙️ Model Configuration")
@@ -69,9 +118,9 @@ if uploaded_file:
 
         submit_button = st.form_submit_button("🚀 Train Model")
 
-    # ---------------------------
-    # TRAIN ONLY AFTER BUTTON
-    # ---------------------------
+    # -------------------------------------------------
+    # TRAIN AFTER BUTTON
+    # -------------------------------------------------
     if submit_button:
 
         X = df.drop(target_column, axis=1)
@@ -87,7 +136,7 @@ if uploaded_file:
             random_state=42
         )
 
-        with st.spinner("Training model... Please wait..."):
+        with st.spinner("Training model..."):
 
             model = get_model(model_name, X_train)
             model.fit(X_train, y_train)
@@ -108,9 +157,9 @@ if uploaded_file:
                 n_jobs=-1
             )
 
-        # ---------------------------
+        # -------------------------------------------------
         # METRICS
-        # ---------------------------
+        # -------------------------------------------------
         accuracy = accuracy_score(y_test, preds)
         precision = precision_score(y_test, preds, average="weighted")
         recall = recall_score(y_test, preds, average="weighted")
@@ -121,42 +170,57 @@ if uploaded_file:
 
         col1, col2, col3, col4, col5, col6 = st.columns(6)
 
-        col1.metric("Accuracy", f"{accuracy:.4f}")
-        col2.metric("Precision", f"{precision:.4f}")
-        col3.metric("Recall", f"{recall:.4f}")
-        col4.metric("F1 Score", f"{f1:.4f}")
-        col5.metric("MCC", f"{mcc:.4f}")
-        col6.metric("CV Accuracy", f"{cv_scores.mean():.4f}")
+        metrics = {
+            "Accuracy": accuracy,
+            "Precision": precision,
+            "Recall": recall,
+            "F1 Score": f1,
+            "MCC": mcc,
+            "CV Accuracy": cv_scores.mean()
+        }
+
+        for col, (label, value) in zip(
+            [col1, col2, col3, col4, col5, col6],
+            metrics.items()
+        ):
+            col.markdown(f"""
+            <div class="metric-box">
+                <div class="metric-label">{label}</div>
+                <div class="metric-value">{value:.4f}</div>
+            </div>
+            """, unsafe_allow_html=True)
 
         if auc is not None:
             st.metric("ROC AUC", f"{auc:.4f}")
 
-        # ---------------------------
+        # -------------------------------------------------
         # CONFUSION MATRIX
-        # ---------------------------
+        # -------------------------------------------------
         st.markdown("## 🧮 Confusion Matrix")
 
         cm = confusion_matrix(y_test, preds)
 
-        fig, ax = plt.subplots()
+        fig, ax = plt.subplots(figsize=(6, 4))
         sns.heatmap(
             cm,
             annot=True,
             fmt="d",
-            cmap="Blues",
+            cmap="YlGnBu",
             linewidths=1,
-            linecolor="gray"
+            linecolor="white",
+            annot_kws={"size": 18, "weight": "bold"}
         )
         ax.set_xlabel("Predicted")
         ax.set_ylabel("Actual")
+
         st.pyplot(fig)
 
-        # ---------------------------
+        # -------------------------------------------------
         # CLASSIFICATION REPORT
-        # ---------------------------
+        # -------------------------------------------------
         st.markdown("## 📋 Classification Report")
 
         report = classification_report(y_test, preds, output_dict=True)
-        report_df = pd.DataFrame(report).transpose()
+        report_df = pd.DataFrame(report).transpose().round(4)
 
-        st.dataframe(report_df.round(4), width="stretch")
+        st.dataframe(report_df, width="stretch")
