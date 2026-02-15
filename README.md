@@ -135,5 +135,5 @@ The deployed Streamlit dashboard includes:
 
 ```bash
 pip install -r requirements.txt
-python models.py   # Optional (if models not pre-trained)
+python model/models.py   # Optional (if models not pre-trained)
 streamlit run App.py
