@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import LabelEncoder
+from sklearn.preprocessing import LabelEncoder, StandardScaler
 from sklearn.metrics import (
     accuracy_score, precision_score, recall_score,
     f1_score, roc_auc_score, matthews_corrcoef,
@@ -18,45 +18,72 @@ from sklearn.tree import DecisionTreeClassifier
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.naive_bayes import GaussianNB
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.pipeline import make_pipeline
 from xgboost import XGBClassifier
 
 st.set_page_config(layout="wide")
+
+# ==========================================================
+# SAFE CSV READER (FIXES UnicodeDecodeError)
+# ==========================================================
+def safe_read_csv(file):
+    try:
+        return pd.read_csv(file)
+    except UnicodeDecodeError:
+        return pd.read_csv(file, encoding="latin1")
 
 # ==========================================================
 # LOAD DATA
 # ==========================================================
 @st.cache_data
 def load_data():
-    df = pd.read_csv("Data.csv")
+    df = safe_read_csv("Data.csv")
     df.columns = df.columns.str.strip()
     return df
 
 df = load_data()
 TARGET = "income"
 
+# Encode target
 label_encoder = LabelEncoder()
 df[TARGET] = label_encoder.fit_transform(df[TARGET])
 
-X = pd.get_dummies(df.drop(columns=[TARGET]))
+# One-hot encode (reduced size)
+X = pd.get_dummies(df.drop(columns=[TARGET]), drop_first=True)
+X = X.astype(float)
 y = df[TARGET]
 train_columns = X.columns
 
 # ==========================================================
-# TRAIN MODELS
+# TRAIN MODELS (STABLE + FAST)
 # ==========================================================
 @st.cache_resource
 def train_models():
 
     models = {
-        "Logistic Regression": LogisticRegression(max_iter=400),
+        "Logistic Regression": LogisticRegression(
+            max_iter=800,
+            solver="liblinear"
+        ),
+
         "Decision Tree": DecisionTreeClassifier(max_depth=6),
-        "KNN": KNeighborsClassifier(n_neighbors=5),
+
+        "KNN": make_pipeline(
+            StandardScaler(with_mean=False),
+            KNeighborsClassifier(
+                n_neighbors=7,
+                weights="distance"
+            )
+        ),
+
         "Naive Bayes": GaussianNB(),
+
         "Random Forest": RandomForestClassifier(
             n_estimators=60,
             max_depth=8,
             n_jobs=-1
         ),
+
         "XGBoost": XGBClassifier(
             eval_metric="logloss",
             n_estimators=60,
@@ -67,7 +94,7 @@ def train_models():
     }
 
     X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=42
+        X, y, test_size=0.2, random_state=42, stratify=y
     )
 
     results = {}
@@ -110,11 +137,11 @@ selected_model = models_dict[model_name]["model"]
 # ==========================================================
 # HEADER
 # ==========================================================
-st.title("🎓 Income Predictor")
+st.title("🎓 BITS ML Classification Dashboard")
 st.caption("Pre-trained models • Live predictor • Upload test dataset")
 
 # ==========================================================
-# LIVE PREDICTOR
+# LIVE INCOME PREDICTOR
 # ==========================================================
 st.subheader("🔮 Live Income Predictor")
 
@@ -134,10 +161,10 @@ for i, feature in enumerate(top_features):
         )
 
 if st.button("Predict Income"):
-
     input_df = pd.DataFrame([user_input])
     input_df = pd.get_dummies(input_df)
     input_df = input_df.reindex(columns=train_columns, fill_value=0)
+    input_df = input_df.astype(float)
 
     pred = selected_model.predict(input_df)[0]
     prob = selected_model.predict_proba(input_df)[0][1]
@@ -148,21 +175,15 @@ if st.button("Predict Income"):
     c2.metric(">50K Probability", f"{prob:.2%}")
 
 # ==========================================================
-# MODEL TABLE
+# MODEL COMPARISON TABLE
 # ==========================================================
 st.subheader("🏆 Pre-Trained Model Comparison")
 
 table_data = []
-
-for name, values in models_dict.items():
+for name, v in models_dict.items():
     table_data.append([
-        name,
-        values["accuracy"],
-        values["precision"],
-        values["recall"],
-        values["f1"],
-        values["roc_auc"],
-        values["mcc"]
+        name, v["accuracy"], v["precision"],
+        v["recall"], v["f1"], v["roc_auc"], v["mcc"]
     ])
 
 results_df = pd.DataFrame(
@@ -172,21 +193,20 @@ results_df = pd.DataFrame(
 
 numeric_cols = ["Accuracy","Precision","Recall","F1","ROC AUC","MCC"]
 
-styled_table = (
+st.dataframe(
     results_df.style
-        .format({col: "{:.3f}" for col in numeric_cols})
-        .background_gradient(cmap="Blues", subset=numeric_cols)
+        .format({c: "{:.3f}" for c in numeric_cols})
+        .background_gradient(cmap="Blues", subset=numeric_cols),
+    width="stretch"
 )
 
-st.dataframe(styled_table, use_container_width=True)
-
 # ==========================================================
-# TEST DATA
+# TEST DATA EVALUATION
 # ==========================================================
 if uploaded_file:
     st.subheader("📊 Test Dataset Evaluation")
 
-    test_df = pd.read_csv(uploaded_file)
+    test_df = safe_read_csv(uploaded_file)
     test_df.columns = test_df.columns.str.strip()
 
     if TARGET not in test_df.columns:
@@ -196,14 +216,15 @@ if uploaded_file:
 
             test_df[TARGET] = label_encoder.transform(test_df[TARGET])
 
-            X_test = pd.get_dummies(test_df.drop(columns=[TARGET]))
+            X_test = pd.get_dummies(test_df.drop(columns=[TARGET]), drop_first=True)
             X_test = X_test.reindex(columns=train_columns, fill_value=0)
+            X_test = X_test.astype(float)
             y_test = test_df[TARGET]
 
             preds = selected_model.predict(X_test)
             probs = selected_model.predict_proba(X_test)[:,1]
 
-            # 1️⃣ METRICS FIRST
+            # METRICS FIRST
             st.subheader("📊 Test Metrics")
 
             acc = accuracy_score(y_test,preds)
@@ -223,7 +244,7 @@ if uploaded_file:
             m5.metric("Recall", f"{rec:.3f}")
             m6.metric("MCC", f"{mcc:.3f}")
 
-            # 2️⃣ PLOTS SIDE BY SIDE
+            # SIDE BY SIDE PLOTS
             colA, colB = st.columns(2)
 
             with colA:
@@ -241,17 +262,4 @@ if uploaded_file:
                 ax2.set_title("ROC Curve")
                 st.pyplot(fig2)
 
-            # 3️⃣ DATA-BASED SUMMARY
-            st.divider()
-            st.subheader("📌 Dataset Performance Summary")
-
-            st.write(f"""
-            • Model evaluated on **{len(y_test)} test samples**  
-            • Accuracy of **{acc:.2%}** indicates overall prediction correctness  
-            • ROC AUC of **{roc_auc:.2f}** shows the model's ability to distinguish income classes  
-            • Precision ({prec:.2f}) reflects how many predicted high-income cases were correct  
-            • Recall ({rec:.2f}) measures how well high-income individuals were identified  
-            • MCC score of **{mcc:.2f}** indicates balanced performance across both classes  
-
-            Overall, the model demonstrates {"strong" if acc > 0.85 else "moderate" if acc > 0.75 else "limited"} generalization on this dataset.
-            """)
+            st.success("Evaluation completed successfully.")
