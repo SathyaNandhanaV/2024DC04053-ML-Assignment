@@ -133,81 +133,6 @@ selected_model = models_dict[model_name]
 # ==========================================================
 st.title("🎓 Income Predictor")
 st.caption("Pre-trained models • Live Predictor ")
-# ==========================================================
-# 📊 PRE-TRAINED MODEL COMPARISON
-# ==========================================================
-st.subheader("🏆 Pre-Trained Model Performance Comparison")
-
-leaderboard_data = []
-
-for name, model in models_dict.items():
-    # We re-evaluate quickly on training split for comparison
-    X_train_split, X_test_split, y_train_split, y_test_split = train_test_split(
-        X, y, test_size=0.2, random_state=42
-    )
-
-    model.fit(X_train_split, y_train_split)
-
-    preds = model.predict(X_test_split)
-    probs = model.predict_proba(X_test_split)[:, 1]
-
-    leaderboard_data.append({
-        "Model": name,
-        "Accuracy": accuracy_score(y_test_split, preds),
-        "Precision": precision_score(y_test_split, preds),
-        "Recall": recall_score(y_test_split, preds),
-        "F1 Score": f1_score(y_test_split, preds),
-        "ROC AUC": roc_auc_score(y_test_split, probs),
-        "MCC": matthews_corrcoef(y_test_split, preds)
-    })
-
-leaderboard_df = pd.DataFrame(leaderboard_data)
-leaderboard_df = leaderboard_df.sort_values(by="Accuracy", ascending=False)
-
-# ================= TABLE =================
-st.dataframe(
-    leaderboard_df.style.format({
-        "Accuracy": "{:.3f}",
-        "Precision": "{:.3f}",
-        "Recall": "{:.3f}",
-        "F1 Score": "{:.3f}",
-        "ROC AUC": "{:.3f}",
-        "MCC": "{:.3f}"
-    }),
-    width="stretch"
-)
-
-# ================= BAR CHART =================
-st.markdown("### 📈 Accuracy Comparison")
-
-fig, ax = plt.subplots(figsize=(6,3))
-bars = ax.bar(
-    leaderboard_df["Model"],
-    leaderboard_df["Accuracy"]
-)
-
-ax.set_ylim(0,1)
-ax.set_ylabel("Accuracy")
-ax.set_xticklabels(leaderboard_df["Model"], rotation=45, ha="right")
-
-for bar in bars:
-    height = bar.get_height()
-    ax.text(bar.get_x() + bar.get_width()/2,
-            height,
-            f"{height:.2f}",
-            ha="center",
-            va="bottom",
-            fontsize=8)
-
-st.pyplot(fig)
-
-# ================= BEST MODEL =================
-best_model = leaderboard_df.iloc[0]["Model"]
-best_acc = leaderboard_df.iloc[0]["Accuracy"]
-
-st.success(f"🏅 Best Performing Model: **{best_model}** (Accuracy: {best_acc:.2%})")
-
-st.divider()
 
 # ==========================================================
 # 🔮 LIVE INCOME PREDICTOR
@@ -249,7 +174,35 @@ if st.button("Predict Income"):
     c2.metric(">50K Probability", f"{prob:.2%}")
 
 st.divider()
+st.subheader("🏆 Pre-Trained Model Comparison")
 
+table_data = []
+
+for name, values in models_dict.items():
+    table_data.append([
+        name,
+        values["accuracy"],
+        values["precision"],
+        values["recall"],
+        values["f1"],
+        values["roc_auc"],
+        values["mcc"]
+    ])
+
+results_df = pd.DataFrame(
+    table_data,
+    columns=["Model","Accuracy","Precision","Recall","F1","ROC AUC","MCC"]
+).sort_values("Accuracy", ascending=False)
+
+numeric_cols = ["Accuracy","Precision","Recall","F1","ROC AUC","MCC"]
+
+styled_table = (
+    results_df.style
+        .format({col: "{:.3f}" for col in numeric_cols})
+        .background_gradient(cmap="Blues", subset=numeric_cols)
+)
+
+st.dataframe(styled_table, use_container_width=True)
 # ==========================================================
 # 📊 TEST DATA EVALUATION
 # ==========================================================
