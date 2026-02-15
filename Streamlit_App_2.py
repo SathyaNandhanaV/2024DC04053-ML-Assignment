@@ -27,27 +27,46 @@ st.set_page_config(
     page_icon="📊"
 )
 
-# ------------------ CUSTOM BITS THEME ------------------
+# ------------------ PREMIUM BITS THEME ------------------
 st.markdown("""
 <style>
-.main {
+body {
     background-color: #0B1F3A;
 }
+
 h1, h2, h3 {
     color: #F4A300;
 }
-.metric-card {
+
+.metric-container {
     background-color: #13294B;
     padding: 20px;
-    border-radius: 10px;
+    border-radius: 15px;
     text-align: center;
+    border: 1px solid #1E3A8A;
 }
+
+.metric-label {
+    font-size: 14px;
+    color: #AFCBFF;
+}
+
+.metric-value {
+    font-size: 30px;
+    font-weight: bold;
+    color: #F4A300;
+}
+
+div[data-testid="stDataFrame"] {
+    border-radius: 12px;
+    overflow: hidden;
+}
+
 </style>
 """, unsafe_allow_html=True)
 
-
 st.title("🎓 BITS ML Classification Dashboard")
-st.markdown("Train, evaluate and visualize multiple ML models interactively.")
+st.markdown("Train, evaluate and visualize multiple classification models.")
 
 # ------------------ FILE UPLOAD ------------------
 uploaded_file = st.file_uploader("Upload CSV Dataset", type="csv")
@@ -87,7 +106,6 @@ if uploaded_file:
         X = df.drop(target_column, axis=1)
         y = df[target_column]
 
-        # Convert target to numeric if needed
         if y.dtype == "object":
             y = pd.factorize(y)[0]
 
@@ -98,25 +116,10 @@ if uploaded_file:
         with st.spinner("Training model..."):
 
             model = get_model(model_name, X_train)
-
-            # Speed optimization
-            if model_name == "Random Forest":
-                model.set_params(n_estimators=50, max_depth=10)
-
-            if model_name == "XGBoost":
-                model.set_params(
-                    n_estimators=50,
-                    max_depth=4,
-                    learning_rate=0.1,
-                    verbosity=0,
-                    use_label_encoder=False
-                )
-
             model.fit(X_train, y_train)
 
         preds = model.predict(X_test)
 
-        # ------------------ METRICS ------------------
         accuracy = accuracy_score(y_test, preds)
         precision = precision_score(y_test, preds, average="weighted")
         recall = recall_score(y_test, preds, average="weighted")
@@ -132,18 +135,26 @@ if uploaded_file:
         cv_scores = cross_val_score(model, X, y, cv=5)
         cv_mean = cv_scores.mean()
 
-        # ------------------ METRIC CARDS ------------------
-        st.markdown("## 📊 Model Performance Summary")
+        # ------------------ PREMIUM METRIC CARDS ------------------
+        st.markdown("## 📊 Model Performance")
 
-        col1, col2, col3, col4, col5 = st.columns(5)
+        cols = st.columns(6)
+        metrics = [
+            ("Accuracy", accuracy),
+            ("Precision", precision),
+            ("Recall", recall),
+            ("F1 Score", f1),
+            ("MCC", mcc),
+            ("CV Accuracy", cv_mean)
+        ]
 
-        col1.metric("Accuracy", f"{accuracy:.3f}")
-        col2.metric("Precision", f"{precision:.3f}")
-        col3.metric("Recall", f"{recall:.3f}")
-        col4.metric("F1 Score", f"{f1:.3f}")
-        col5.metric("MCC", f"{mcc:.3f}")
-
-        st.markdown(f"### 🔁 Cross Validation Accuracy: `{cv_mean:.4f}`")
+        for col, (label, value) in zip(cols, metrics):
+            col.markdown(f"""
+                <div class="metric-container">
+                    <div class="metric-label">{label}</div>
+                    <div class="metric-value">{value:.4f}</div>
+                </div>
+            """, unsafe_allow_html=True)
 
         if auc:
             st.markdown(f"### 📈 ROC AUC Score: `{auc:.4f}`")
@@ -154,7 +165,13 @@ if uploaded_file:
         report = classification_report(y_test, preds, output_dict=True)
         report_df = pd.DataFrame(report).transpose().round(4)
 
-        styled = report_df.style.background_gradient(cmap="Blues")
+        styled = report_df.style \
+            .background_gradient(cmap="Blues") \
+            .set_properties(**{
+                "background-color": "#13294B",
+                "color": "white",
+                "border-color": "#1E3A8A"
+            })
 
         st.dataframe(styled, use_container_width=True)
 
@@ -169,24 +186,23 @@ if uploaded_file:
             annot=True,
             fmt="d",
             cmap="YlGnBu",
-            annot_kws={"size": 18, "weight": "bold"},
+            annot_kws={"size": 20, "weight": "bold"},
             linewidths=2
         )
-        ax_cm.set_xlabel("Predicted")
-        ax_cm.set_ylabel("Actual")
         st.pyplot(fig_cm)
 
-        # ------------------ METRIC BAR GRAPH ------------------
+        # ------------------ METRIC BAR CHART ------------------
         st.markdown("## 📊 Metric Comparison")
 
         metric_df = pd.DataFrame({
-            "Metric": ["Accuracy", "Precision", "Recall", "F1 Score", "MCC"],
+            "Metric": ["Accuracy", "Precision", "Recall", "F1", "MCC"],
             "Score": [accuracy, precision, recall, f1, mcc]
         })
 
         fig_bar, ax_bar = plt.subplots(figsize=(8, 4))
         sns.barplot(data=metric_df, x="Metric", y="Score", palette="viridis")
         ax_bar.set_ylim(0, 1)
+        ax_bar.set_title("Performance Overview", fontsize=14, weight="bold")
         st.pyplot(fig_bar)
 
         # ------------------ ROC CURVE ------------------
@@ -206,8 +222,8 @@ if uploaded_file:
 
             st.markdown("## 🌟 Feature Importance")
 
-            importances = model.feature_importances_
-            feature_names = X.columns
+            importances = model.named_steps["classifier"].feature_importances_
+            feature_names = model.named_steps["preprocessor"].get_feature_names_out()
 
             fi_df = pd.DataFrame({
                 "Feature": feature_names,
@@ -217,4 +233,3 @@ if uploaded_file:
             fig_fi, ax_fi = plt.subplots(figsize=(8, 5))
             sns.barplot(data=fi_df, x="Importance", y="Feature", palette="magma")
             st.pyplot(fig_fi)
-
