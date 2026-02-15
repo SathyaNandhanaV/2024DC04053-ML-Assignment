@@ -174,35 +174,7 @@ if st.button("Predict Income"):
     c2.metric(">50K Probability", f"{prob:.2%}")
 
 st.divider()
-st.subheader("🏆 Pre-Trained Model Comparison")
 
-table_data = []
-
-for name, values in models_dict.items():
-    table_data.append([
-        name,
-        values["accuracy"],
-        values["precision"],
-        values["recall"],
-        values["f1"],
-        values["roc_auc"],
-        values["mcc"]
-    ])
-
-results_df = pd.DataFrame(
-    table_data,
-    columns=["Model","Accuracy","Precision","Recall","F1","ROC AUC","MCC"]
-).sort_values("Accuracy", ascending=False)
-
-numeric_cols = ["Accuracy","Precision","Recall","F1","ROC AUC","MCC"]
-
-styled_table = (
-    results_df.style
-        .format({col: "{:.3f}" for col in numeric_cols})
-        .background_gradient(cmap="Blues", subset=numeric_cols)
-)
-
-st.dataframe(styled_table, use_container_width=True)
 # ==========================================================
 # 📊 TEST DATA EVALUATION
 # ==========================================================
