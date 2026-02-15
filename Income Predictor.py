@@ -174,6 +174,64 @@ if st.button("Predict Income"):
     c2.metric(">50K Probability", f"{prob:.2%}")
 
 st.divider()
+# ==========================================================
+# 🏆 PRE-TRAINED MODEL PERFORMANCE
+# ==========================================================
+st.subheader("🏆 Pre-Trained Model Comparison")
+
+@st.cache_data
+def compute_leaderboard():
+    leaderboard = []
+
+    X_train_split, X_test_split, y_train_split, y_test_split = train_test_split(
+        X, y, test_size=0.2, random_state=42
+    )
+
+    for name, model in models_dict.items():
+        preds = model.predict(X_test_split)
+        probs = model.predict_proba(X_test_split)[:, 1]
+
+        leaderboard.append({
+            "Model": name,
+            "Accuracy": accuracy_score(y_test_split, preds),
+            "Precision": precision_score(y_test_split, preds),
+            "Recall": recall_score(y_test_split, preds),
+            "F1 Score": f1_score(y_test_split, preds),
+            "ROC AUC": roc_auc_score(y_test_split, probs),
+            "MCC": matthews_corrcoef(y_test_split, preds)
+        })
+
+    df_leaderboard = pd.DataFrame(leaderboard)
+    return df_leaderboard.sort_values(by="Accuracy", ascending=False)
+
+leaderboard_df = compute_leaderboard()
+
+# ================= BEAUTIFUL BLUE TABLE =================
+
+styled_table = (
+    leaderboard_df
+    .style
+    .format({
+        "Accuracy": "{:.3f}",
+        "Precision": "{:.3f}",
+        "Recall": "{:.3f}",
+        "F1 Score": "{:.3f}",
+        "ROC AUC": "{:.3f}",
+        "MCC": "{:.3f}"
+    })
+    .background_gradient(
+        cmap="Blues",
+        subset=["Accuracy", "Precision", "Recall", "F1 Score", "ROC AUC", "MCC"]
+    )
+    .set_properties(**{
+        "text-align": "center",
+        "font-weight": "bold"
+    })
+)
+
+st.dataframe(styled_table, width="stretch")
+
+st.divider()
 
 # ==========================================================
 # 📊 TEST DATA EVALUATION
