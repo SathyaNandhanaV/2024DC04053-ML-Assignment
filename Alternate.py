@@ -18,12 +18,14 @@ from sklearn.metrics import (
 
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.naive_bayes import GaussianNB
 from xgboost import XGBClassifier
 
 
 # ---------------- PAGE CONFIG ----------------
 st.set_page_config(page_title="BITS ML Dashboard", layout="wide")
-
 st.title("🎓 BITS ML Classification Dashboard")
 st.caption("Pre-trained models • Upload test dataset to evaluate")
 
@@ -57,6 +59,9 @@ def pretrain_models():
 
     models = {
         "Logistic Regression": LogisticRegression(max_iter=200),
+        "Decision Tree": DecisionTreeClassifier(max_depth=6),
+        "KNN": KNeighborsClassifier(n_neighbors=7),
+        "Naive Bayes": GaussianNB(),
         "Random Forest": RandomForestClassifier(
             n_estimators=40, max_depth=6, n_jobs=-1
         ),
@@ -75,7 +80,7 @@ def pretrain_models():
     for name, model in models.items():
         model.fit(X_train, y_train)
         preds = model.predict(X_test)
-        probs = model.predict_proba(X_test)[:, 1]
+        probs = model.predict_proba(X_test)[:, 1] if hasattr(model, "predict_proba") else preds
 
         results[name] = {
             "Accuracy": accuracy_score(y_test, preds),
@@ -119,8 +124,22 @@ with left_col:
 
     counts = df[TARGET].value_counts()
 
-    fig, ax = plt.subplots(figsize=(4, 2.8))
-    ax.bar(counts.index, counts.values, color=["#4C72B0", "#DD8452"])
+    fig, ax = plt.subplots(figsize=(4, 3))
+    bars = ax.bar(counts.index, counts.values, color=["#4C72B0", "#DD8452"])
+
+    # Add numbers above bars
+    for bar in bars:
+        height = bar.get_height()
+        ax.text(
+            bar.get_x() + bar.get_width() / 2,
+            height,
+            f"{int(height)}",
+            ha="center",
+            va="bottom",
+            fontsize=10,
+            fontweight="bold"
+        )
+
     ax.set_ylabel("Count")
     ax.set_xlabel("Class")
     ax.set_title("Income Distribution")
@@ -133,7 +152,18 @@ with right_col:
     st.subheader("🏆 Pre-Trained Model Comparison")
 
     perf_df = pd.DataFrame(results).T.round(4)
-    st.dataframe(perf_df, use_container_width=True)
+
+    styled_df = (
+        perf_df.style
+        .background_gradient(cmap="Blues")
+        .format("{:.4f}")
+        .set_properties(**{
+            'text-align': 'center',
+            'font-size': '13px'
+        })
+    )
+
+    st.dataframe(styled_df, use_container_width=True)
 
 
 # ---------------- TEST EVALUATION ----------------
@@ -158,7 +188,7 @@ if uploaded:
     model = trained_models[model_name]
 
     preds = model.predict(X_test)
-    probs = model.predict_proba(X_test)[:, 1]
+    probs = model.predict_proba(X_test)[:, 1] if hasattr(model, "predict_proba") else preds
 
     acc = accuracy_score(y_test, preds)
     prec = precision_score(y_test, preds)
@@ -201,16 +231,15 @@ if uploaded:
     # -------- Summary --------
     st.subheader("📝 Model Summary")
 
-    st.info(
+    st.success(
         f"""
-        The selected model **{model_name}** achieved an accuracy of **{acc:.2%}**
-        on the uploaded test dataset.
+        The **{model_name}** model achieved:
 
-        • F1 Score indicates balance between precision and recall.
-        • ROC AUC measures class separability.
-        • MCC reflects overall prediction quality including imbalance.
+        • Accuracy: {acc:.2%}  
+        • F1 Score: {f1:.2%}  
+        • ROC AUC: {roc:.2%}  
 
-        This model appears to {'perform well' if acc > 0.8 else 'require improvement'} 
-        on the provided dataset.
+        This indicates {'strong classification performance' if acc > 0.8 else 'moderate performance'} 
+        on the uploaded dataset.
         """
     )
