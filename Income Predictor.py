@@ -205,7 +205,7 @@ if uploaded_file:
 
             #  HARD LIMIT FOR KNN
             if model_name == "KNN" and len(X_test) > 1000:
-                X_test = X_test.sample(10000, random_state=42)
+                X_test = X_test.sample(5000, random_state=42)
                 y_test = y_test.loc[X_test.index]
 
             preds = selected_model.predict(X_test)
