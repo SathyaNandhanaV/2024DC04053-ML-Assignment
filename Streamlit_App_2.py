@@ -10,7 +10,8 @@ from sklearn.metrics import (
     confusion_matrix, roc_curve
 )
 
-from models import get_all_models   # 🔥 IMPORT FROM models.py
+from sklearn.model_selection import train_test_split
+from models import get_all_models   # models come from models.py
 
 st.set_page_config(layout="wide")
 
@@ -22,6 +23,71 @@ def load_models():
     return get_all_models()
 
 models_dict, train_columns, label_encoder = load_models()
+
+# ==========================================================
+# PRE-TRAINED MODEL METRICS (BLUE TABLE)
+# ==========================================================
+@st.cache_data
+def compute_pretrained_metrics():
+
+    df = pd.read_csv("Data.csv")
+    df.columns = df.columns.str.strip()
+
+    TARGET = "income"
+    df[TARGET] = label_encoder.transform(df[TARGET])
+
+    X = pd.get_dummies(df.drop(columns=[TARGET]), drop_first=True)
+    X = X.astype(float)
+    y = df[TARGET]
+
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.2, random_state=42
+    )
+
+    results = []
+
+    for name, model in models_dict.items():
+
+        preds = model.predict(X_test)
+        probs = model.predict_proba(X_test)[:, 1]
+
+        results.append({
+            "Model": name,
+            "Accuracy": accuracy_score(y_test, preds),
+            "Precision": precision_score(y_test, preds),
+            "Recall": recall_score(y_test, preds),
+            "F1 Score": f1_score(y_test, preds),
+            "ROC AUC": roc_auc_score(y_test, probs),
+            "MCC": matthews_corrcoef(y_test, preds)
+        })
+
+    return pd.DataFrame(results)
+
+
+st.title("🎓 Income Predictor")
+st.caption("Pre-trained models • Live Predictor • Test Evaluation")
+
+st.subheader("🏆 Pre-Trained Model Performance")
+
+metrics_df = compute_pretrained_metrics()
+
+styled_df = (
+    metrics_df
+    .style
+    .background_gradient(cmap="Blues", subset=metrics_df.columns[1:])
+    .format({
+        "Accuracy": "{:.3f}",
+        "Precision": "{:.3f}",
+        "Recall": "{:.3f}",
+        "F1 Score": "{:.3f}",
+        "ROC AUC": "{:.3f}",
+        "MCC": "{:.3f}"
+    })
+)
+
+st.dataframe(styled_df, width="stretch")
+
+st.divider()
 
 # ==========================================================
 # SIDEBAR
@@ -40,17 +106,10 @@ uploaded_file = st.sidebar.file_uploader(
 selected_model = models_dict[model_name]
 
 # ==========================================================
-# HEADER
-# ==========================================================
-st.title("🎓 Income Predictor")
-st.caption("Pre-trained models • Live Predictor")
-
-# ==========================================================
-# LIVE PREDICTOR
+# LIVE INCOME PREDICTOR
 # ==========================================================
 st.subheader("🔮 Live Income Predictor")
 
-# Load dataset again for correlation
 df = pd.read_csv("Data.csv")
 df.columns = df.columns.str.strip()
 
@@ -122,7 +181,7 @@ if uploaded_file:
             X_test = X_test[train_columns].astype(float)
             y_test = test_df[TARGET]
 
-            # 🔥 KNN LIMIT FIX
+            # Limit KNN heavy evaluation
             if model_name == "KNN" and len(X_test) > 1000:
                 X_test = X_test.sample(1000, random_state=42)
                 y_test = y_test.loc[X_test.index]
@@ -166,3 +225,32 @@ if uploaded_file:
                 ax2.plot([0,1],[0,1],'--')
                 ax2.set_title("ROC Curve")
                 st.pyplot(fig2)
+
+            st.divider()
+            st.subheader("🧠 Test Data Performance Summary")
+
+            total = len(y_test)
+            positive = (y_test == 1).sum()
+            negative = (y_test == 0).sum()
+
+            st.markdown(f"""
+            - Total Samples: **{total}**
+            - ≤50K: **{negative}**
+            - >50K: **{positive}**
+            """)
+
+            st.markdown(f"""
+            **Accuracy:** {acc:.2%}  
+            **Precision:** {prec:.2f}  
+            **Recall:** {rec:.2f}  
+            **F1 Score:** {f1:.2f}  
+            **ROC AUC:** {roc_auc:.2f}  
+            **MCC:** {mcc:.2f}
+            """)
+
+            if acc > 0.85:
+                st.success("Strong model performance on test data.")
+            elif acc > 0.75:
+                st.info("Moderate performance. Some tuning could improve results.")
+            else:
+                st.warning("Model performance is relatively weak on this test data.")
