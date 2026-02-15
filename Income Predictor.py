@@ -203,9 +203,9 @@ if uploaded_file:
 
             y_test = test_df[TARGET]
 
-            # 🔥 HARD LIMIT FOR KNN
+            #  HARD LIMIT FOR KNN
             if model_name == "KNN" and len(X_test) > 1000:
-                X_test = X_test.sample(1000, random_state=42)
+                X_test = X_test.sample(10000, random_state=42)
                 y_test = y_test.loc[X_test.index]
 
             preds = selected_model.predict(X_test)
@@ -251,31 +251,129 @@ if uploaded_file:
 
             # ================= SUMMARY =================
             st.divider()
-            st.subheader("🧠 Model Interpretation")
+            st.subheader("🧠 Test Data Performance Interpretation")
 
-            st.write(f"""
-            Evaluated on **{len(y_test)} samples**.
+            # Dataset distribution
+            total_samples = len(y_test)
+            class_0 = (y_test == 0).sum()
+            class_1 = (y_test == 1).sum()
+            imbalance_ratio = round(class_1 / total_samples * 100, 2)
 
-            This model works by:
+            st.markdown(f"""
+            ### 📊 Dataset Characteristics
+            - Total test samples: **{total_samples}**
+            - ≤50K: **{class_0}**
+            - >50K: **{class_1}**
+            - High-income ratio: **{imbalance_ratio}%**
+
+            This dataset is {'moderately imbalanced' if imbalance_ratio < 40 else 'fairly balanced'}.
             """)
 
-            explanations = {
-                "Logistic Regression": "Learning linear relationships using weighted features.",
-                "Decision Tree": "Splitting data into rule-based branches.",
-                "KNN": "Comparing new samples to nearest stored examples.",
-                "Naive Bayes": "Using probabilistic independence assumptions.",
-                "Random Forest": "Averaging multiple decision trees.",
-                "XGBoost": "Sequentially improving tree errors using boosting."
+            st.markdown("### 📈 Metric Interpretation")
+
+            # Accuracy interpretation
+            if acc > 0.85:
+                acc_text = "Strong overall predictive accuracy."
+            elif acc > 0.75:
+                acc_text = "Moderate accuracy. Model performs reasonably well."
+            else:
+                acc_text = "Low accuracy. Model struggles on this dataset."
+
+            # Precision interpretation
+            if prec > 0.85:
+                prec_text = "High precision: When predicting >50K, the model is usually correct."
+            elif prec > 0.70:
+                prec_text = "Moderate precision: Some false positives exist."
+            else:
+                prec_text = "Low precision: Many false positive income predictions."
+
+            # Recall interpretation
+            if rec > 0.85:
+                rec_text = "High recall: Most high-income individuals are correctly identified."
+            elif rec > 0.70:
+                rec_text = "Moderate recall: Some high-income individuals are missed."
+            else:
+                rec_text = "Low recall: Many high-income individuals are not detected."
+
+            # MCC interpretation
+            if mcc > 0.60:
+                mcc_text = "Strong balanced classification performance."
+            elif mcc > 0.40:
+                mcc_text = "Moderate balance between classes."
+            else:
+                mcc_text = "Weak balanced performance."
+
+            st.markdown(f"""
+            ### 🔍 What The Metrics Mean
+
+            **Accuracy ({acc:.2%})**  
+            Measures overall correctness.  
+            👉 {acc_text}
+
+            **Precision ({prec:.2f})**  
+            Out of predicted >50K cases, how many were truly >50K.  
+            👉 {prec_text}
+
+            **Recall ({rec:.2f})**  
+            Out of actual >50K cases, how many were detected.  
+            👉 {rec_text}
+
+            **F1 Score ({f1:.2f})**  
+            Balances precision and recall. Higher means better trade-off.
+
+            **ROC AUC ({roc_auc:.2f})**  
+            Measures ranking ability across thresholds.  
+            Values closer to 1 indicate strong separability.
+
+            **MCC ({mcc:.2f})**  
+            Evaluates overall quality of binary classification,
+            especially important for imbalanced datasets.  
+            👉 {mcc_text}
+            """)
+
+            st.markdown("### 🤖 Model Behaviour Insight")
+
+            model_explanations = {
+                "Logistic Regression": """
+            This model learns weighted linear relationships between features and income.
+            It works best when the relationship between variables and income is mostly linear.
+            """,
+
+                "Decision Tree": """
+            This model creates rule-based splits.
+            It captures nonlinear patterns but can overfit if too deep.
+            """,
+
+                "KNN": """
+            This model compares each new person to similar past individuals.
+            It performs well when similar income groups cluster together.
+            """,
+
+                "Naive Bayes": """
+            This model assumes feature independence and uses probability rules.
+            Fast but sometimes oversimplifies relationships.
+            """,
+
+                "Random Forest": """
+            This ensemble model combines many trees.
+            It reduces overfitting and handles complex interactions well.
+            """,
+
+                "XGBoost": """
+            This boosting model sequentially improves mistakes.
+            Often delivers strong performance on structured datasets.
+            """
             }
 
-            st.write(explanations[model_name])
+            st.markdown(model_explanations[model_name])
 
-            st.write(f"""
-            **Performance Insight**
+            st.markdown("### 📌 Overall Conclusion")
 
-            Accuracy: {acc:.2%}  
-            ROC AUC: {roc_auc:.2f}  
-            Precision: {prec:.2f}  
-            Recall: {rec:.2f}  
-            MCC: {mcc:.2f}
-            """)
+            if acc > 0.85 and mcc > 0.6:
+                final_comment = "The model demonstrates strong generalization and reliable classification on this test dataset."
+            elif acc > 0.75:
+                final_comment = "The model performs reasonably well but could benefit from tuning or feature engineering."
+            else:
+                final_comment = "The model shows limited predictive strength on this dataset."
+
+            st.success(final_comment)
