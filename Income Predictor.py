@@ -34,11 +34,9 @@ def load_data():
 df = load_data()
 TARGET = "income"
 
-# Encode target
 label_encoder = LabelEncoder()
 df[TARGET] = label_encoder.fit_transform(df[TARGET])
 
-# One-hot encode
 X = pd.get_dummies(df.drop(columns=[TARGET]))
 y = df[TARGET]
 train_columns = X.columns
@@ -205,7 +203,27 @@ if uploaded_file:
             preds = selected_model.predict(X_test)
             probs = selected_model.predict_proba(X_test)[:,1]
 
-            # SIDE BY SIDE PLOTS
+            # 1️⃣ METRICS FIRST
+            st.subheader("📊 Test Metrics")
+
+            acc = accuracy_score(y_test,preds)
+            f1 = f1_score(y_test,preds)
+            roc_auc = roc_auc_score(y_test,probs)
+            prec = precision_score(y_test,preds)
+            rec = recall_score(y_test,preds)
+            mcc = matthews_corrcoef(y_test,preds)
+
+            m1,m2,m3 = st.columns(3)
+            m1.metric("Accuracy", f"{acc:.3f}")
+            m2.metric("F1 Score", f"{f1:.3f}")
+            m3.metric("ROC AUC", f"{roc_auc:.3f}")
+
+            m4,m5,m6 = st.columns(3)
+            m4.metric("Precision", f"{prec:.3f}")
+            m5.metric("Recall", f"{rec:.3f}")
+            m6.metric("MCC", f"{mcc:.3f}")
+
+            # 2️⃣ PLOTS SIDE BY SIDE
             colA, colB = st.columns(2)
 
             with colA:
@@ -223,28 +241,17 @@ if uploaded_file:
                 ax2.set_title("ROC Curve")
                 st.pyplot(fig2)
 
-            # METRICS
-            st.subheader("📊 Test Metrics")
-
-            m1,m2,m3 = st.columns(3)
-            m1.metric("Accuracy", f"{accuracy_score(y_test,preds):.3f}")
-            m2.metric("F1 Score", f"{f1_score(y_test,preds):.3f}")
-            m3.metric("ROC AUC", f"{roc_auc_score(y_test,probs):.3f}")
-
-            m4,m5,m6 = st.columns(3)
-            m4.metric("Precision", f"{precision_score(y_test,preds):.3f}")
-            m5.metric("Recall", f"{recall_score(y_test,preds):.3f}")
-            m6.metric("MCC", f"{matthews_corrcoef(y_test,preds):.3f}")
-
-            # MODEL COMMENTARY
+            # 3️⃣ DATA-BASED SUMMARY
             st.divider()
-            st.subheader("📌 Model Performance Summary")
+            st.subheader("📌 Dataset Performance Summary")
 
-            acc = accuracy_score(y_test,preds)
+            st.write(f"""
+            • Model evaluated on **{len(y_test)} test samples**  
+            • Accuracy of **{acc:.2%}** indicates overall prediction correctness  
+            • ROC AUC of **{roc_auc:.2f}** shows the model's ability to distinguish income classes  
+            • Precision ({prec:.2f}) reflects how many predicted high-income cases were correct  
+            • Recall ({rec:.2f}) measures how well high-income individuals were identified  
+            • MCC score of **{mcc:.2f}** indicates balanced performance across both classes  
 
-            if acc > 0.85:
-                st.success("This model demonstrates strong predictive performance on the dataset with high accuracy and balanced classification ability.")
-            elif acc > 0.75:
-                st.info("This model performs reasonably well but may benefit from further tuning or feature engineering.")
-            else:
-                st.warning("This model shows weaker performance and may not generalize well to unseen data.")
+            Overall, the model demonstrates {"strong" if acc > 0.85 else "moderate" if acc > 0.75 else "limited"} generalization on this dataset.
+            """)
