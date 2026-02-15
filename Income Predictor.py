@@ -11,14 +11,18 @@ from sklearn.metrics import (
     confusion_matrix, roc_curve
 )
 from sklearn.preprocessing import LabelEncoder
-
-from models import get_all_models  # your existing model loader
+from sklearn.linear_model import LogisticRegression
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.naive_bayes import GaussianNB
+from sklearn.ensemble import RandomForestClassifier
+from xgboost import XGBClassifier
 
 st.set_page_config(layout="wide")
 
-# -------------------------------
+# ====================================================
 # LOAD DATA
-# -------------------------------
+# ====================================================
 @st.cache_data
 def load_data():
     df = pd.read_csv("Data.csv")
@@ -28,28 +32,42 @@ def load_data():
 df = load_data()
 TARGET = "income"
 
-# -------------------------------
+# ====================================================
 # PREPROCESS
-# -------------------------------
+# ====================================================
 label_encoder = LabelEncoder()
 df[TARGET] = label_encoder.fit_transform(df[TARGET])
 
 X = pd.get_dummies(df.drop(columns=[TARGET]))
 y = df[TARGET]
-
 train_columns = X.columns
 
-# -------------------------------
-# TRAIN MODELS ONCE
-# -------------------------------
+# ====================================================
+# TRAIN MODELS (FAST VERSION)
+# ====================================================
 @st.cache_resource
 def train_models():
-    models = get_all_models()
+    models = {
+        "Logistic Regression": LogisticRegression(max_iter=500),
+        "Decision Tree": DecisionTreeClassifier(max_depth=6),
+        "KNN": KNeighborsClassifier(n_neighbors=5),
+        "Naive Bayes": GaussianNB(),
+        "Random Forest": RandomForestClassifier(n_estimators=80, max_depth=8),
+        "XGBoost": XGBClassifier(
+            eval_metric="logloss",
+            n_estimators=80,
+            max_depth=4,
+            learning_rate=0.1,
+            verbosity=0
+        )
+    }
+
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=0.2, random_state=42
     )
 
     results = {}
+
     for name, model in models.items():
         model.fit(X_train, y_train)
         preds = model.predict(X_test)
@@ -69,20 +87,19 @@ def train_models():
 
 models_dict = train_models()
 
-# ===============================
+# ====================================================
 # HEADER
-# ===============================
+# ====================================================
 st.title("🎓 BITS ML Classification Dashboard")
 st.caption("Pre-trained models • Upload test dataset to evaluate")
 
-# ===============================
-# 🎯 LIVE PREDICTOR AT TOP
-# ===============================
+# ====================================================
+# 🎯 LIVE INCOME PREDICTOR
+# ====================================================
 st.divider()
 st.header("🎯 Live Income Predictor")
 
-numeric_df = df.copy()
-corr = numeric_df.corr(numeric_only=True)[TARGET].abs().sort_values(ascending=False)
+corr = df.corr(numeric_only=True)[TARGET].abs().sort_values(ascending=False)
 top_features = corr.index[1:7]
 
 cols = st.columns(3)
@@ -107,7 +124,6 @@ if st.button("🔮 Predict Income"):
 
     pred = selected_model.predict(input_df)[0]
     prob = selected_model.predict_proba(input_df)[0][1]
-
     label = label_encoder.inverse_transform([pred])[0]
 
     col1, col2 = st.columns([2,1])
@@ -118,24 +134,34 @@ if st.button("🔮 Predict Income"):
     with col2:
         st.metric(">50K Probability", f"{prob:.2%}")
 
-    # Small probability chart
+    # Small clean bar chart
     fig, ax = plt.subplots(figsize=(3,2))
     bars = ax.bar(["<=50K", ">50K"], [1-prob, prob])
     ax.set_ylim(0,1)
+
     for bar in bars:
         height = bar.get_height()
-        ax.text(bar.get_x()+bar.get_width()/2, height/2,
-                f"{height:.2%}", ha='center', va='center', color='white', fontsize=8)
-    ax.set_title("Confidence", fontsize=9)
+        ax.text(
+            bar.get_x()+bar.get_width()/2,
+            height/2,
+            f"{height:.2%}",
+            ha='center',
+            va='center',
+            color='white',
+            fontsize=8
+        )
+
+    ax.set_title("Prediction Confidence", fontsize=9)
     st.pyplot(fig)
 
-# ===============================
-# 📊 PRETRAINED MODEL TABLE
-# ===============================
+# ====================================================
+# MODEL COMPARISON TABLE
+# ====================================================
 st.divider()
 st.header("🏆 Pre-Trained Model Comparison")
 
 table_data = []
+
 for name, values in models_dict.items():
     table_data.append([
         name,
@@ -160,9 +186,9 @@ styled_table = (
 
 st.dataframe(styled_table, use_container_width=True)
 
-# ===============================
-# 📂 TEST DATASET SECTION
-# ===============================
+# ====================================================
+# TEST DATA EVALUATION
+# ====================================================
 st.divider()
 st.header("📂 Evaluate Uploaded Test Dataset")
 
@@ -176,6 +202,7 @@ if uploaded:
         st.error("Target column missing in test dataset.")
     else:
         if st.button("Apply Model on Test Data"):
+
             test_df[TARGET] = label_encoder.transform(test_df[TARGET])
 
             X_test = pd.get_dummies(test_df.drop(columns=[TARGET]))
@@ -185,7 +212,7 @@ if uploaded:
             preds = selected_model.predict(X_test)
             probs = selected_model.predict_proba(X_test)[:,1]
 
-            # Small confusion matrix
+            # Small Confusion Matrix
             cm = confusion_matrix(y_test, preds)
             fig_cm, ax_cm = plt.subplots(figsize=(3,3))
             sns.heatmap(cm, annot=True, fmt="d", cmap="Blues", ax=ax_cm)
@@ -202,8 +229,8 @@ if uploaded:
 
             # Metrics
             st.subheader("📊 Test Metrics")
-            m1, m2, m3 = st.columns(3)
 
+            m1, m2, m3 = st.columns(3)
             m1.metric("Accuracy", f"{accuracy_score(y_test,preds):.3f}")
             m2.metric("F1 Score", f"{f1_score(y_test,preds):.3f}")
             m3.metric("ROC AUC", f"{roc_auc_score(y_test,probs):.3f}")
