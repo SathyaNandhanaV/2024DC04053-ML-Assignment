@@ -11,7 +11,7 @@ from sklearn.metrics import (
 )
 
 from sklearn.model_selection import train_test_split
-from models import get_all_models
+from model.models import get_all_models
 
 st.set_page_config(layout="wide")
 
