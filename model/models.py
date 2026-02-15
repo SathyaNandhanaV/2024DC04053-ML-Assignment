@@ -1,82 +1,122 @@
+# models.py
+
+from sklearn.pipeline import Pipeline
+from sklearn.compose import ColumnTransformer
+from sklearn.preprocessing import OneHotEncoder, StandardScaler
+from sklearn.impute import SimpleImputer
+
 from sklearn.linear_model import LogisticRegression
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.naive_bayes import GaussianNB
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.pipeline import Pipeline
-from sklearn.compose import ColumnTransformer
-from sklearn.preprocessing import OneHotEncoder
-from sklearn.preprocessing import FunctionTransformer
 from xgboost import XGBClassifier
-import numpy as np
 
 
-def build_pipeline(model, X, force_dense=False):
+# ==========================================================
+# PREPROCESSOR
+# ==========================================================
+def build_preprocessor(X):
 
     categorical_cols = X.select_dtypes(include=["object"]).columns
-    numeric_cols = X.select_dtypes(exclude=["object"]).columns
+    numerical_cols = X.select_dtypes(exclude=["object"]).columns
 
-    preprocessor = ColumnTransformer(
-        transformers=[
-            ("num", "passthrough", numeric_cols),
-            (
-                "cat",
-                OneHotEncoder(
-                    handle_unknown="ignore",
-                    sparse_output=False
-                ),
-                categorical_cols
-            )
-        ]
-    )
+    numeric_pipeline = Pipeline([
+        ("imputer", SimpleImputer(strategy="median")),
+        ("scaler", StandardScaler())
+    ])
 
-    steps = [("preprocessor", preprocessor)]
+    categorical_pipeline = Pipeline([
+        ("imputer", SimpleImputer(strategy="most_frequent")),
+        ("encoder", OneHotEncoder(handle_unknown="ignore"))
+    ])
 
-    # Force dense conversion for Naive Bayes
-    if force_dense:
-        steps.append(
-            ("to_dense", FunctionTransformer(lambda x: np.asarray(x)))
+    preprocessor = ColumnTransformer([
+        ("num", numeric_pipeline, numerical_cols),
+        ("cat", categorical_pipeline, categorical_cols)
+    ])
+
+    return preprocessor
+
+
+# ==========================================================
+# MODEL DEFINITIONS
+# ==========================================================
+def build_model(model_name):
+
+    if model_name == "Logistic Regression":
+        return LogisticRegression(
+            solver="liblinear",
+            max_iter=800
         )
 
-    steps.append(("classifier", model))
+    elif model_name == "Decision Tree":
+        return DecisionTreeClassifier(max_depth=6)
 
-    return Pipeline(steps)
+    elif model_name == "KNN":
+        return KNeighborsClassifier(
+            n_neighbors=5,
+            algorithm="ball_tree"
+        )
+
+    elif model_name == "Naive Bayes":
+        return GaussianNB()
+
+    elif model_name == "Random Forest":
+        return RandomForestClassifier(
+            n_estimators=60,
+            max_depth=8,
+            n_jobs=-1,
+            random_state=42
+        )
+
+    elif model_name == "XGBoost":
+        return XGBClassifier(
+            eval_metric="logloss",
+            n_estimators=60,
+            max_depth=4,
+            learning_rate=0.1,
+            verbosity=0,
+            random_state=42
+        )
+
+    else:
+        raise ValueError("Invalid model name")
 
 
+# ==========================================================
+# CREATE PIPELINE
+# ==========================================================
 def get_model(model_name, X):
 
-    if model_name == "Naive Bayes":
-        return build_pipeline(
-            GaussianNB(),
-            X,
-            force_dense=True   # IMPORTANT
-        )
+    preprocessor = build_preprocessor(X)
+    model = build_model(model_name)
 
-    models = {
-        "Logistic Regression": LogisticRegression(max_iter=1000),
+    pipeline = Pipeline([
+        ("preprocessor", preprocessor),
+        ("classifier", model)
+    ])
 
-        "Decision Tree": DecisionTreeClassifier(
-            max_depth=10,
-            random_state=42
-        ),
+    return pipeline
 
-        "KNN": KNeighborsClassifier(n_neighbors=5),
 
-        "Random Forest": RandomForestClassifier(
-            n_estimators=50,
-            max_depth=10,
-            n_jobs=-1,
-            random_state=42
-        ),
+# ==========================================================
+# RETURN ALL MODELS
+# ==========================================================
+def get_all_models(X):
 
-        "XGBoost": XGBClassifier(
-            n_estimators=50,
-            max_depth=6,
-            learning_rate=0.1,
-            n_jobs=-1,
-            eval_metric="logloss",
-            random_state=42
-        )
-    }
+    model_names = [
+        "Logistic Regression",
+        "Decision Tree",
+        "KNN",
+        "Naive Bayes",
+        "Random Forest",
+        "XGBoost"
+    ]
 
-    return build_pipeline(models[model_name], X)
+    models = {}
+
+    for name in model_names:
+        models[name] = get_model(name, X)
+
+    return models

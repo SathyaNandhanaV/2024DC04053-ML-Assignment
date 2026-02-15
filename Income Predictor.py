@@ -20,14 +20,9 @@ from sklearn.naive_bayes import GaussianNB
 from sklearn.ensemble import RandomForestClassifier
 from xgboost import XGBClassifier
 
-# ==========================================================
-# PAGE CONFIG
-# ==========================================================
 st.set_page_config(layout="wide")
 
-# ==========================================================
-# SAFE CSV LOADER
-# ==========================================================
+
 def safe_read_csv(file):
     for enc in ["utf-8", "utf-8-sig", "latin1"]:
         try:
@@ -37,9 +32,6 @@ def safe_read_csv(file):
     st.error("Unable to read CSV file.")
     st.stop()
 
-# ==========================================================
-# LOAD TRAINING DATA
-# ==========================================================
 @st.cache_data
 def load_data():
     return safe_read_csv("Data.csv")
@@ -57,9 +49,7 @@ X = X.astype(float)
 y = df[TARGET]
 train_columns = X.columns
 
-# ==========================================================
-# TRAIN MODELS (CACHED)
-# ==========================================================
+
 @st.cache_resource
 def train_models():
 
@@ -112,9 +102,6 @@ def train_models():
 
 models_dict = train_models()
 
-# ==========================================================
-# SIDEBAR
-# ==========================================================
 st.sidebar.title("⚙ Configuration")
 
 model_name = st.sidebar.selectbox(
@@ -128,15 +115,11 @@ uploaded_file = st.sidebar.file_uploader(
 
 selected_model = models_dict[model_name]
 
-# ==========================================================
-# HEADER
-# ==========================================================
+
 st.title("🎓 Income Predictor")
 st.caption("Pre-trained models • Live Predictor ")
 
-# ==========================================================
-# 🔮 LIVE INCOME PREDICTOR
-# ==========================================================
+
 st.subheader("🔮 Live Income Predictor")
 
 corr = df.corr(numeric_only=True)[TARGET].abs().sort_values(ascending=False)
@@ -174,9 +157,7 @@ if st.button("Predict Income"):
     c2.metric(">50K Probability", f"{prob:.2%}")
 
 st.divider()
-# ==========================================================
-# 🏆 PRE-TRAINED MODEL PERFORMANCE
-# ==========================================================
+
 st.subheader("🏆 Pre-Trained Model Comparison")
 
 @st.cache_data
@@ -206,7 +187,7 @@ def compute_leaderboard():
 
 leaderboard_df = compute_leaderboard()
 
-# ================= BEAUTIFUL BLUE TABLE =================
+
 
 styled_table = (
     leaderboard_df
@@ -233,9 +214,7 @@ st.dataframe(styled_table, width="stretch")
 
 st.divider()
 
-# ==========================================================
-# 📊 TEST DATA EVALUATION
-# ==========================================================
+
 if uploaded_file:
 
     st.subheader("📊 Test Dataset Evaluation")
@@ -261,7 +240,7 @@ if uploaded_file:
 
             y_test = test_df[TARGET]
 
-            #  HARD LIMIT FOR KNN
+            
             if model_name == "KNN" and len(X_test) > 1000:
                 X_test = X_test.sample(1000, random_state=42)
                 y_test = y_test.loc[X_test.index]
@@ -289,7 +268,7 @@ if uploaded_file:
             m5.metric("Recall", f"{rec:.3f}")
             m6.metric("MCC", f"{mcc:.3f}")
 
-            # ================= SMALL PLOTS =================
+            
             colA, colB = st.columns(2)
 
             with colA:
