@@ -71,26 +71,34 @@ preprocessor = ColumnTransformer([
 
 
 # -----------------------------
-# TRAIN MODELS (FAST)
+# TRAIN MODELS (FAST VERSION)
 # -----------------------------
 @st.cache_resource
 def train_models():
 
+    # Speed optimization: sample max 20k rows
+    if len(X) > 20000:
+        X_sample = X.sample(n=20000, random_state=42)
+        y_sample = y.loc[X_sample.index]
+    else:
+        X_sample = X
+        y_sample = y
+
     X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=42
+        X_sample, y_sample, test_size=0.2, random_state=42
     )
 
     models = {
-        "Logistic Regression": LogisticRegression(max_iter=500),
-        "Decision Tree": DecisionTreeClassifier(max_depth=8),
+        "Logistic Regression": LogisticRegression(max_iter=300),
+        "Decision Tree": DecisionTreeClassifier(max_depth=6),
         "KNN": KNeighborsClassifier(n_neighbors=5),
         "Naive Bayes": GaussianNB(),
         "Random Forest": RandomForestClassifier(
-            n_estimators=80, max_depth=10, n_jobs=-1
+            n_estimators=50, max_depth=8, n_jobs=-1
         ),
         "XGBoost": XGBClassifier(
-            n_estimators=80,
-            max_depth=4,
+            n_estimators=50,
+            max_depth=3,
             learning_rate=0.1,
             eval_metric="logloss",
             verbosity=0,
@@ -117,20 +125,14 @@ def train_models():
         except:
             auc = 0
 
-        acc = accuracy_score(y_test, preds)
-        f1 = f1_score(y_test, preds)
-        precision = precision_score(y_test, preds)
-        recall = recall_score(y_test, preds)
-        mcc = matthews_corrcoef(y_test, preds)
-
         leaderboard.append({
             "Model": name,
-            "Accuracy": acc,
-            "Precision": precision,
-            "Recall": recall,
-            "F1 Score": f1,
+            "Accuracy": accuracy_score(y_test, preds),
+            "Precision": precision_score(y_test, preds),
+            "Recall": recall_score(y_test, preds),
+            "F1 Score": f1_score(y_test, preds),
             "ROC AUC": auc,
-            "MCC": mcc
+            "MCC": matthews_corrcoef(y_test, preds)
         })
 
         trained[name] = pipe
@@ -146,59 +148,46 @@ models_dict, leaderboard_df = train_models()
 
 
 # -----------------------------
-# DATA ANALYTICS SECTION
+# 🎯 TARGET VARIABLE VISUAL FOCUS
 # -----------------------------
-st.header("📊 Dataset Overview")
+st.markdown("## 🎯 Target Variable Distribution")
 
-col1, col2 = st.columns(2)
-
-with col1:
-    st.metric("Total Records", df.shape[0])
-    st.metric("Total Features", df.shape[1] - 1)
-
-with col2:
-    st.metric("Class 0 Count", (y == 0).sum())
-    st.metric("Class 1 Count", (y == 1).sum())
-
-st.markdown("### Class Distribution")
-fig, ax = plt.subplots()
-sns.countplot(x=y)
+fig, ax = plt.subplots(figsize=(4,4))
+y.value_counts().plot.pie(
+    autopct="%1.1f%%",
+    colors=["#1f77b4", "#ff7f0e"],
+    ax=ax
+)
+ax.set_ylabel("")
+ax.set_title("Income Classification Distribution")
 st.pyplot(fig)
 
 
 # -----------------------------
-# LEADERBOARD
+# 🏆 PRE-TRAINED MODEL HIGHLIGHT
 # -----------------------------
-st.header("🏆 Model Leaderboard (Pre-Trained)")
-st.dataframe(leaderboard_df.style.background_gradient(cmap="Blues"))
+st.markdown("## 🏆 Pre-Trained Model Performance")
 
+best_model = leaderboard_df.iloc[0]
 
-# -----------------------------
-# ROC COMPARISON
-# -----------------------------
-st.header("📈 ROC Curve Comparison")
+col1, col2, col3 = st.columns(3)
 
-fig2, ax2 = plt.subplots()
+col1.metric("🥇 Best Model", best_model["Model"])
+col2.metric("Accuracy", f"{best_model['Accuracy']:.4f}")
+col3.metric("ROC AUC", f"{best_model['ROC AUC']:.4f}")
 
-for name in models_dict:
-    pipe = models_dict[name]
-    _, X_test_temp, _, y_test_temp = train_test_split(
-        X, y, test_size=0.2, random_state=42
-    )
-    probs = pipe.predict_proba(X_test_temp)[:, 1]
-    fpr, tpr, _ = roc_curve(y_test_temp, probs)
-    ax2.plot(fpr, tpr, label=name)
-
-ax2.plot([0, 1], [0, 1], linestyle="--")
-ax2.legend()
-st.pyplot(fig2)
+st.dataframe(
+    leaderboard_df.style
+    .background_gradient(cmap="viridis")
+    .format("{:.4f}"),
+    use_container_width=True
+)
 
 
 # -----------------------------
-# UPLOAD TEST DATA
+# 📂 UPLOAD TEST DATA
 # -----------------------------
-st.header("📂 Upload Test Dataset")
-
+st.markdown("## 📂 Upload Test Dataset")
 uploaded_file = st.file_uploader("Upload CSV", type=["csv"])
 
 if uploaded_file:
@@ -222,17 +211,60 @@ if uploaded_file:
     preds = model.predict(X_test)
     probs = model.predict_proba(X_test)[:, 1]
 
-    st.header("🔮 Classification Summary")
+    # -----------------------------
+    # 🔮 CLASSIFICATION SUMMARY
+    # -----------------------------
+    st.markdown("## 🔮 Classification Results")
 
-    st.metric("Accuracy", f"{accuracy_score(y_test, preds):.4f}")
-    st.metric("F1 Score", f"{f1_score(y_test, preds):.4f}")
-    st.metric("Precision", f"{precision_score(y_test, preds):.4f}")
-    st.metric("Recall", f"{recall_score(y_test, preds):.4f}")
-    st.metric("ROC AUC", f"{roc_auc_score(y_test, probs):.4f}")
-    st.metric("MCC", f"{matthews_corrcoef(y_test, preds):.4f}")
+    big1, big2 = st.columns(2)
+    big1.metric("🎯 Accuracy", f"{accuracy_score(y_test, preds):.4f}")
+    big2.metric("📊 F1 Score", f"{f1_score(y_test, preds):.4f}")
 
-    st.subheader("Confusion Matrix")
+    # Prediction distribution
+    st.markdown("### Prediction Distribution")
+    fig_pred, ax_pred = plt.subplots(figsize=(4,4))
+    pd.Series(preds).value_counts().plot.pie(
+        autopct="%1.1f%%",
+        colors=["#2ca02c", "#d62728"],
+        ax=ax_pred
+    )
+    ax_pred.set_ylabel("")
+    ax_pred.set_title("Predicted Class Distribution")
+    st.pyplot(fig_pred)
+
+    # -----------------------------
+    # 📊 DETAILED METRICS
+    # -----------------------------
+    st.markdown("### 📊 Detailed Metrics")
+
+    m1, m2, m3 = st.columns(3)
+    m4, m5, m6 = st.columns(3)
+
+    m1.metric("Precision", f"{precision_score(y_test, preds):.4f}")
+    m2.metric("Recall", f"{recall_score(y_test, preds):.4f}")
+    m3.metric("F1 Score", f"{f1_score(y_test, preds):.4f}")
+    m4.metric("ROC AUC", f"{roc_auc_score(y_test, probs):.4f}")
+    m5.metric("MCC", f"{matthews_corrcoef(y_test, preds):.4f}")
+    m6.metric("Support", len(y_test))
+
+    # -----------------------------
+    # CONFUSION MATRIX
+    # -----------------------------
+    st.markdown("### 🔥 Confusion Matrix")
     cm = confusion_matrix(y_test, preds)
-    fig3, ax3 = plt.subplots()
-    sns.heatmap(cm, annot=True, fmt="d", cmap="Blues")
-    st.pyplot(fig3)
+    fig_cm, ax_cm = plt.subplots(figsize=(4,3))
+    sns.heatmap(cm, annot=True, fmt="d", cmap="Blues", ax=ax_cm)
+    st.pyplot(fig_cm)
+
+    # -----------------------------
+    # ROC CURVE
+    # -----------------------------
+    st.markdown("### 📈 ROC Curve")
+    fpr, tpr, _ = roc_curve(y_test, probs)
+    fig_roc, ax_roc = plt.subplots(figsize=(5,4))
+    ax_roc.plot(fpr, tpr)
+    ax_roc.plot([0,1],[0,1], linestyle="--")
+    ax_roc.set_xlabel("False Positive Rate")
+    ax_roc.set_ylabel("True Positive Rate")
+    ax_roc.set_title("ROC Curve")
+    st.pyplot(fig_roc)
