@@ -20,6 +20,9 @@ from sklearn.naive_bayes import GaussianNB
 from sklearn.ensemble import RandomForestClassifier
 from xgboost import XGBClassifier
 
+# ==========================================================
+# PAGE CONFIG
+# ==========================================================
 st.set_page_config(layout="wide")
 
 # ==========================================================
@@ -46,14 +49,11 @@ df.columns = df.columns.str.strip()
 
 TARGET = "income"
 
-# Encode target
 label_encoder = LabelEncoder()
 df[TARGET] = label_encoder.fit_transform(df[TARGET])
 
-# One-hot encode features
 X = pd.get_dummies(df.drop(columns=[TARGET]), drop_first=True)
 X = X.astype(float)
-
 y = df[TARGET]
 train_columns = X.columns
 
@@ -74,8 +74,11 @@ def train_models():
         "KNN": make_pipeline(
             StandardScaler(with_mean=False),
             KNeighborsClassifier(
-                n_neighbors=7,
-                weights="distance"
+                n_neighbors=5,
+                algorithm="ball_tree",
+                leaf_size=40,
+                weights="uniform",
+                n_jobs=-1
             )
         ),
 
@@ -142,8 +145,8 @@ selected_model = models_dict[model_name]["model"]
 # ==========================================================
 # HEADER
 # ==========================================================
-st.title("🎓 Income Predictor")
-st.caption("Pre-trained models • Robust test evaluation • Cloud safe")
+st.title("🎓 Income Classification Dashboard")
+st.caption("Pre-trained ML models • Live predictor • Dataset-aware explanation")
 
 # ==========================================================
 # LIVE PREDICTOR
@@ -184,10 +187,13 @@ if st.button("Predict Income"):
     c1.success(f"Predicted Income: {label}")
     c2.metric(">50K Probability", f"{prob:.2%}")
 
+st.divider()
+
 # ==========================================================
 # TEST DATA EVALUATION
 # ==========================================================
 if uploaded_file:
+
     st.subheader("📊 Test Dataset Evaluation")
 
     test_df = safe_read_csv(uploaded_file)
@@ -202,7 +208,6 @@ if uploaded_file:
 
             X_test = pd.get_dummies(test_df.drop(columns=[TARGET]), drop_first=True)
 
-            # Ensure exact training structure
             for col in train_columns:
                 if col not in X_test.columns:
                     X_test[col] = 0
@@ -212,18 +217,26 @@ if uploaded_file:
 
             y_test = test_df[TARGET]
 
-            preds = selected_model.predict(X_test)
-            probs = selected_model.predict_proba(X_test)[:, 1]
+            # KNN safe evaluation
+            if model_name == "KNN" and len(X_test) > 15000:
+                X_eval = X_test.sample(15000, random_state=42)
+                y_eval = y_test.loc[X_eval.index]
+            else:
+                X_eval = X_test
+                y_eval = y_test
 
-            # METRICS FIRST
+            preds = selected_model.predict(X_eval)
+            probs = selected_model.predict_proba(X_eval)[:, 1]
+
+            # ================= METRICS =================
             st.subheader("📊 Test Metrics")
 
-            acc = accuracy_score(y_test, preds)
-            f1 = f1_score(y_test, preds)
-            roc_auc = roc_auc_score(y_test, probs)
-            prec = precision_score(y_test, preds)
-            rec = recall_score(y_test, preds)
-            mcc = matthews_corrcoef(y_test, preds)
+            acc = accuracy_score(y_eval, preds)
+            f1 = f1_score(y_eval, preds)
+            roc_auc = roc_auc_score(y_eval, probs)
+            prec = precision_score(y_eval, preds)
+            rec = recall_score(y_eval, preds)
+            mcc = matthews_corrcoef(y_eval, preds)
 
             m1,m2,m3 = st.columns(3)
             m1.metric("Accuracy", f"{acc:.3f}")
@@ -235,35 +248,71 @@ if uploaded_file:
             m5.metric("Recall", f"{rec:.3f}")
             m6.metric("MCC", f"{mcc:.3f}")
 
-            # SIDE BY SIDE PLOTS
+            # ================= PLOTS =================
             colA, colB = st.columns(2)
 
             with colA:
-                cm = confusion_matrix(y_test, preds)
+                cm = confusion_matrix(y_eval, preds)
                 fig1, ax1 = plt.subplots(figsize=(3,3))
                 sns.heatmap(cm, annot=True, fmt="d", cmap="Blues", ax=ax1)
                 ax1.set_title("Confusion Matrix")
                 st.pyplot(fig1)
 
             with colB:
-                fpr, tpr, _ = roc_curve(y_test, probs)
+                fpr, tpr, _ = roc_curve(y_eval, probs)
                 fig2, ax2 = plt.subplots(figsize=(3,3))
                 ax2.plot(fpr, tpr)
                 ax2.plot([0,1],[0,1],'--')
                 ax2.set_title("ROC Curve")
                 st.pyplot(fig2)
 
-            # SUMMARY
+            # ================= MODEL & DATASET SUMMARY =================
             st.divider()
-            st.subheader("📌 Dataset Performance Summary")
+            st.subheader("🧠 Model & Dataset Interpretation")
 
-            st.write(f"""
-            • Evaluated on **{len(y_test)} samples**  
-            • Accuracy: **{acc:.2%}**  
-            • ROC AUC: **{roc_auc:.2f}**  
-            • Precision: **{prec:.2f}**  
-            • Recall: **{rec:.2f}**  
-            • MCC: **{mcc:.2f}**
+            total_samples = len(y_eval)
+            class_0 = (y_eval == 0).sum()
+            class_1 = (y_eval == 1).sum()
+            imbalance_ratio = round(class_1 / total_samples * 100, 2)
 
-            Overall performance is **{"strong" if acc > 0.85 else "moderate" if acc > 0.75 else "weak"}** for this dataset.
+            st.markdown(f"""
+            ### 📊 Dataset Overview
+            - Samples evaluated: **{total_samples}**
+            - ≤50K: **{class_0}**
+            - >50K: **{class_1}**
+            - High-income ratio: **{imbalance_ratio}%**
+            """)
+
+            st.markdown("### 🤖 How This Model Works")
+
+            if model_name == "Logistic Regression":
+                st.markdown("Linear probability model using feature weights and sigmoid transformation.")
+            elif model_name == "Decision Tree":
+                st.markdown("Splits data using feature thresholds forming interpretable branches.")
+            elif model_name == "KNN":
+                st.markdown("Distance-based model predicting from nearest training examples.")
+            elif model_name == "Naive Bayes":
+                st.markdown("Probabilistic classifier assuming conditional independence.")
+            elif model_name == "Random Forest":
+                st.markdown("Ensemble of trees reducing variance and improving stability.")
+            elif model_name == "XGBoost":
+                st.markdown("Boosted trees correcting previous errors sequentially.")
+
+            st.markdown("### 📈 Performance Insight")
+
+            if acc > 0.85:
+                comment = "Strong predictive performance."
+            elif acc > 0.75:
+                comment = "Moderate performance."
+            else:
+                comment = "Performance can be improved."
+
+            st.markdown(f"""
+            - Accuracy: **{acc:.2%}**
+            - ROC AUC: **{roc_auc:.2f}**
+            - Precision: **{prec:.2f}**
+            - Recall: **{rec:.2f}**
+            - MCC: **{mcc:.2f}**
+
+            {comment}
             """)
