@@ -26,7 +26,7 @@ from xgboost import XGBClassifier
 st.set_page_config(layout="wide")
 
 # ==========================================================
-# SAFE CSV READER
+# SAFE CSV LOADER
 # ==========================================================
 def safe_read_csv(file):
     for enc in ["utf-8", "utf-8-sig", "latin1"]:
@@ -38,7 +38,7 @@ def safe_read_csv(file):
     st.stop()
 
 # ==========================================================
-# LOAD DATA
+# LOAD TRAINING DATA
 # ==========================================================
 @st.cache_data
 def load_data():
@@ -58,7 +58,7 @@ y = df[TARGET]
 train_columns = X.columns
 
 # ==========================================================
-# TRAIN MODELS
+# TRAIN MODELS (CACHED)
 # ==========================================================
 @st.cache_resource
 def train_models():
@@ -132,10 +132,51 @@ selected_model = models_dict[model_name]
 # HEADER
 # ==========================================================
 st.title("🎓 Income Classification Dashboard")
-st.caption("Stable ML evaluation • KNN limited to 1000 samples")
+st.caption("Pre-trained models • Live Predictor • Stable Evaluation")
 
 # ==========================================================
-# TEST DATA EVALUATION
+# 🔮 LIVE INCOME PREDICTOR
+# ==========================================================
+st.subheader("🔮 Live Income Predictor")
+
+corr = df.corr(numeric_only=True)[TARGET].abs().sort_values(ascending=False)
+top_features = corr.index[1:6]
+
+cols = st.columns(3)
+user_input = {}
+
+for i, feature in enumerate(top_features):
+    with cols[i % 3]:
+        user_input[feature] = st.slider(
+            feature,
+            int(df[feature].min()),
+            int(df[feature].max()),
+            int(df[feature].mean())
+        )
+
+if st.button("Predict Income"):
+    input_df = pd.DataFrame([user_input])
+    input_df = pd.get_dummies(input_df, drop_first=True)
+
+    for col in train_columns:
+        if col not in input_df.columns:
+            input_df[col] = 0
+
+    input_df = input_df[train_columns]
+    input_df = input_df.astype(float)
+
+    pred = selected_model.predict(input_df)[0]
+    prob = selected_model.predict_proba(input_df)[0][1]
+    label = label_encoder.inverse_transform([pred])[0]
+
+    c1, c2 = st.columns([2,1])
+    c1.success(f"Predicted Income: {label}")
+    c2.metric(">50K Probability", f"{prob:.2%}")
+
+st.divider()
+
+# ==========================================================
+# 📊 TEST DATA EVALUATION
 # ==========================================================
 if uploaded_file:
 
@@ -162,12 +203,11 @@ if uploaded_file:
 
             y_test = test_df[TARGET]
 
-            # ================= HARD LIMIT FOR KNN =================
+            # 🔥 HARD LIMIT FOR KNN
             if model_name == "KNN" and len(X_test) > 1000:
                 X_test = X_test.sample(1000, random_state=42)
                 y_test = y_test.loc[X_test.index]
 
-            # ================= PREDICTION =================
             preds = selected_model.predict(X_test)
             probs = selected_model.predict_proba(X_test)[:, 1]
 
@@ -191,7 +231,7 @@ if uploaded_file:
             m5.metric("Recall", f"{rec:.3f}")
             m6.metric("MCC", f"{mcc:.3f}")
 
-            # ================= PLOTS =================
+            # ================= SMALL PLOTS =================
             colA, colB = st.columns(2)
 
             with colA:
@@ -214,13 +254,28 @@ if uploaded_file:
             st.subheader("🧠 Model Interpretation")
 
             st.write(f"""
-            Model evaluated on **{len(y_test)} samples**.
+            Evaluated on **{len(y_test)} samples**.
 
-            • Accuracy: **{acc:.2%}**
-            • ROC AUC: **{roc_auc:.2f}**
-            • Precision: **{prec:.2f}**
-            • Recall: **{rec:.2f}**
-            • MCC: **{mcc:.2f}**
+            This model works by:
+            """)
 
-            {'Strong predictive performance.' if acc > 0.85 else 'Moderate performance.'}
+            explanations = {
+                "Logistic Regression": "Learning linear relationships using weighted features.",
+                "Decision Tree": "Splitting data into rule-based branches.",
+                "KNN": "Comparing new samples to nearest stored examples.",
+                "Naive Bayes": "Using probabilistic independence assumptions.",
+                "Random Forest": "Averaging multiple decision trees.",
+                "XGBoost": "Sequentially improving tree errors using boosting."
+            }
+
+            st.write(explanations[model_name])
+
+            st.write(f"""
+            **Performance Insight**
+
+            Accuracy: {acc:.2%}  
+            ROC AUC: {roc_auc:.2f}  
+            Precision: {prec:.2f}  
+            Recall: {rec:.2f}  
+            MCC: {mcc:.2f}
             """)
