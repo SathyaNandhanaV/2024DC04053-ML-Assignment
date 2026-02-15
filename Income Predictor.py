@@ -5,29 +5,20 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import LabelEncoder
 from sklearn.metrics import (
-    accuracy_score,
-    precision_score,
-    recall_score,
-    f1_score,
-    roc_auc_score,
-    matthews_corrcoef,
-    confusion_matrix
+    accuracy_score, precision_score, recall_score,
+    f1_score, roc_auc_score, matthews_corrcoef,
+    confusion_matrix, roc_curve
 )
+from sklearn.preprocessing import LabelEncoder
 
-from sklearn.linear_model import LogisticRegression
-from sklearn.tree import DecisionTreeClassifier
-from sklearn.neighbors import KNeighborsClassifier
-from sklearn.naive_bayes import GaussianNB
-from sklearn.ensemble import RandomForestClassifier
-from xgboost import XGBClassifier
+from models import get_all_models  # your existing model loader
 
 st.set_page_config(layout="wide")
 
-# -----------------------------
+# -------------------------------
 # LOAD DATA
-# -----------------------------
+# -------------------------------
 @st.cache_data
 def load_data():
     df = pd.read_csv("Data.csv")
@@ -35,46 +26,30 @@ def load_data():
     return df
 
 df = load_data()
-
 TARGET = "income"
 
-# -----------------------------
+# -------------------------------
 # PREPROCESS
-# -----------------------------
+# -------------------------------
+label_encoder = LabelEncoder()
+df[TARGET] = label_encoder.fit_transform(df[TARGET])
+
+X = pd.get_dummies(df.drop(columns=[TARGET]))
+y = df[TARGET]
+
+train_columns = X.columns
+
+# -------------------------------
+# TRAIN MODELS ONCE
+# -------------------------------
 @st.cache_resource
-def preprocess_and_train():
-
-    data = df.copy()
-
-    le = LabelEncoder()
-    data[TARGET] = le.fit_transform(data[TARGET])
-
-    X = data.drop(TARGET, axis=1)
-    y = data[TARGET]
-
-    X = pd.get_dummies(X)
-
+def train_models():
+    models = get_all_models()
     X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=42, stratify=y
+        X, y, test_size=0.2, random_state=42
     )
 
-    models = {
-        "Logistic Regression": LogisticRegression(max_iter=300),
-        "Decision Tree": DecisionTreeClassifier(max_depth=6),
-        "KNN": KNeighborsClassifier(n_neighbors=7),
-        "Naive Bayes": GaussianNB(),
-        "Random Forest": RandomForestClassifier(n_estimators=60, max_depth=8),
-        "XGBoost": XGBClassifier(
-            use_label_encoder=False,
-            eval_metric="logloss",
-            n_estimators=60,
-            max_depth=5,
-            learning_rate=0.1
-        ),
-    }
-
     results = {}
-
     for name, model in models.items():
         model.fit(X_train, y_train)
         preds = model.predict(X_test)
@@ -82,183 +57,160 @@ def preprocess_and_train():
 
         results[name] = {
             "model": model,
-            "Accuracy": accuracy_score(y_test, preds),
-            "Precision": precision_score(y_test, preds),
-            "Recall": recall_score(y_test, preds),
-            "F1 Score": f1_score(y_test, preds),
-            "ROC AUC": roc_auc_score(y_test, probs),
-            "MCC": matthews_corrcoef(y_test, preds),
+            "accuracy": accuracy_score(y_test, preds),
+            "precision": precision_score(y_test, preds),
+            "recall": recall_score(y_test, preds),
+            "f1": f1_score(y_test, preds),
+            "roc_auc": roc_auc_score(y_test, probs),
+            "mcc": matthews_corrcoef(y_test, preds)
         }
 
-    return results, X.columns, le
+    return results
 
+models_dict = train_models()
 
-models_dict, train_columns, label_encoder = preprocess_and_train()
-
-# -----------------------------
+# ===============================
 # HEADER
-# -----------------------------
+# ===============================
 st.title("🎓 BITS ML Classification Dashboard")
-st.caption("Pre-trained models • Upload test dataset • Live simulator")
+st.caption("Pre-trained models • Upload test dataset to evaluate")
 
-# -----------------------------
-# LAYOUT
-# -----------------------------
-left, right = st.columns([1, 3])
+# ===============================
+# 🎯 LIVE PREDICTOR AT TOP
+# ===============================
+st.divider()
+st.header("🎯 Live Income Predictor")
 
-# -----------------------------
-# LEFT PANEL
-# -----------------------------
-with left:
-    st.subheader("⚙ Configuration")
+numeric_df = df.copy()
+corr = numeric_df.corr(numeric_only=True)[TARGET].abs().sort_values(ascending=False)
+top_features = corr.index[1:7]
 
-    model_name = st.selectbox(
-        "Select Model",
-        list(models_dict.keys())
-    )
+cols = st.columns(3)
+user_input = {}
 
-    uploaded_file = st.file_uploader(
-        "Upload Test Dataset (CSV)",
-        type="csv"
-    )
-
-# -----------------------------
-# RIGHT PANEL
-# -----------------------------
-with right:
-
-    # -------------------------
-    # TARGET DISTRIBUTION
-    # -------------------------
-    st.subheader("🎯 Target Distribution")
-
-    counts = df[TARGET].value_counts()
-
-    fig, ax = plt.subplots(figsize=(4, 3))
-    bars = ax.bar(counts.index, counts.values)
-    ax.set_ylabel("Count")
-    ax.set_title("Income Distribution")
-
-    for bar in bars:
-        height = bar.get_height()
-        ax.text(
-            bar.get_x() + bar.get_width()/2,
-            height,
-            f"{height}",
-            ha='center',
-            va='bottom'
+for i, feature in enumerate(top_features):
+    with cols[i % 3]:
+        user_input[feature] = st.slider(
+            feature,
+            int(df[feature].min()),
+            int(df[feature].max()),
+            int(df[feature].mean())
         )
 
+model_name = st.selectbox("Select Model", list(models_dict.keys()))
+selected_model = models_dict[model_name]["model"]
+
+if st.button("🔮 Predict Income"):
+    input_df = pd.DataFrame([user_input])
+    input_df = pd.get_dummies(input_df)
+    input_df = input_df.reindex(columns=train_columns, fill_value=0)
+
+    pred = selected_model.predict(input_df)[0]
+    prob = selected_model.predict_proba(input_df)[0][1]
+
+    label = label_encoder.inverse_transform([pred])[0]
+
+    col1, col2 = st.columns([2,1])
+
+    with col1:
+        st.success(f"Predicted Income: {label}")
+
+    with col2:
+        st.metric(">50K Probability", f"{prob:.2%}")
+
+    # Small probability chart
+    fig, ax = plt.subplots(figsize=(3,2))
+    bars = ax.bar(["<=50K", ">50K"], [1-prob, prob])
+    ax.set_ylim(0,1)
+    for bar in bars:
+        height = bar.get_height()
+        ax.text(bar.get_x()+bar.get_width()/2, height/2,
+                f"{height:.2%}", ha='center', va='center', color='white', fontsize=8)
+    ax.set_title("Confidence", fontsize=9)
     st.pyplot(fig)
 
-    # -------------------------
-    # MODEL LEADERBOARD
-    # -------------------------
-    st.subheader("🏆 Pre-Trained Model Comparison")
+# ===============================
+# 📊 PRETRAINED MODEL TABLE
+# ===============================
+st.divider()
+st.header("🏆 Pre-Trained Model Comparison")
 
-    leaderboard = pd.DataFrame(models_dict).T
-    leaderboard = leaderboard.drop(columns=["model"])
-    leaderboard = leaderboard.sort_values("Accuracy", ascending=False)
+table_data = []
+for name, values in models_dict.items():
+    table_data.append([
+        name,
+        values["accuracy"],
+        values["precision"],
+        values["recall"],
+        values["f1"],
+        values["roc_auc"],
+        values["mcc"]
+    ])
 
-    styled = leaderboard.style.format("{:.3f}").background_gradient(cmap="Blues")
+results_df = pd.DataFrame(
+    table_data,
+    columns=["Model","Accuracy","Precision","Recall","F1","ROC AUC","MCC"]
+).sort_values("Accuracy", ascending=False)
 
-    st.dataframe(styled, use_container_width=True)
+styled_table = (
+    results_df.style
+    .background_gradient(cmap="Blues", subset=["Accuracy","F1","ROC AUC"])
+    .format("{:.3f}", subset=["Accuracy","Precision","Recall","F1","ROC AUC","MCC"])
+)
 
-# -----------------------------
-# TEST DATA EVALUATION
-# -----------------------------
-if uploaded_file is not None:
+st.dataframe(styled_table, use_container_width=True)
 
-    st.divider()
-    st.header("📊 Test Dataset Evaluation")
+# ===============================
+# 📂 TEST DATASET SECTION
+# ===============================
+st.divider()
+st.header("📂 Evaluate Uploaded Test Dataset")
 
-    test_df = pd.read_csv(uploaded_file)
+uploaded = st.file_uploader("Upload CSV Test Data")
+
+if uploaded:
+    test_df = pd.read_csv(uploaded)
     test_df.columns = test_df.columns.str.strip()
 
     if TARGET not in test_df.columns:
         st.error("Target column missing in test dataset.")
     else:
+        if st.button("Apply Model on Test Data"):
+            test_df[TARGET] = label_encoder.transform(test_df[TARGET])
 
-        test_df[TARGET] = label_encoder.transform(test_df[TARGET])
+            X_test = pd.get_dummies(test_df.drop(columns=[TARGET]))
+            X_test = X_test.reindex(columns=train_columns, fill_value=0)
+            y_test = test_df[TARGET]
 
-        X_test_user = test_df.drop(TARGET, axis=1)
-        y_test_user = test_df[TARGET]
+            preds = selected_model.predict(X_test)
+            probs = selected_model.predict_proba(X_test)[:,1]
 
-        X_test_user = pd.get_dummies(X_test_user)
-        X_test_user = X_test_user.reindex(columns=train_columns, fill_value=0)
+            # Small confusion matrix
+            cm = confusion_matrix(y_test, preds)
+            fig_cm, ax_cm = plt.subplots(figsize=(3,3))
+            sns.heatmap(cm, annot=True, fmt="d", cmap="Blues", ax=ax_cm)
+            ax_cm.set_title("Confusion Matrix", fontsize=10)
+            st.pyplot(fig_cm)
 
-        model = models_dict[model_name]["model"]
+            # ROC Curve
+            fpr, tpr, _ = roc_curve(y_test, probs)
+            fig_roc, ax_roc = plt.subplots(figsize=(3,3))
+            ax_roc.plot(fpr, tpr)
+            ax_roc.plot([0,1],[0,1],'--')
+            ax_roc.set_title("ROC Curve", fontsize=10)
+            st.pyplot(fig_roc)
 
-        preds = model.predict(X_test_user)
-        probs = model.predict_proba(X_test_user)[:, 1]
+            # Metrics
+            st.subheader("📊 Test Metrics")
+            m1, m2, m3 = st.columns(3)
 
-        col1, col2, col3 = st.columns(3)
+            m1.metric("Accuracy", f"{accuracy_score(y_test,preds):.3f}")
+            m2.metric("F1 Score", f"{f1_score(y_test,preds):.3f}")
+            m3.metric("ROC AUC", f"{roc_auc_score(y_test,probs):.3f}")
 
-        col1.metric("Accuracy", f"{accuracy_score(y_test_user, preds):.3f}")
-        col2.metric("F1 Score", f"{f1_score(y_test_user, preds):.3f}")
-        col3.metric("ROC AUC", f"{roc_auc_score(y_test_user, probs):.3f}")
+            m4, m5, m6 = st.columns(3)
+            m4.metric("Precision", f"{precision_score(y_test,preds):.3f}")
+            m5.metric("Recall", f"{recall_score(y_test,preds):.3f}")
+            m6.metric("MCC", f"{matthews_corrcoef(y_test,preds):.3f}")
 
-        col4, col5, col6 = st.columns(3)
-        col4.metric("Precision", f"{precision_score(y_test_user, preds):.3f}")
-        col5.metric("Recall", f"{recall_score(y_test_user, preds):.3f}")
-        col6.metric("MCC", f"{matthews_corrcoef(y_test_user, preds):.3f}")
-
-        # Confusion Matrix
-        st.subheader("Confusion Matrix")
-
-        cm = confusion_matrix(y_test_user, preds)
-
-        fig2, ax2 = plt.subplots(figsize=(4, 3))
-        sns.heatmap(cm, annot=True, fmt="d", cmap="Blues", ax=ax2)
-        ax2.set_xlabel("Predicted")
-        ax2.set_ylabel("Actual")
-
-        st.pyplot(fig2)
-
-        st.success(
-            f"Model '{model_name}' evaluated successfully on uploaded dataset."
-        )
-
-# -----------------------------
-# LIVE SIMULATOR
-# -----------------------------
-st.divider()
-st.header("🔮 Live Income Prediction Simulator")
-
-col1, col2 = st.columns(2)
-
-with col1:
-    age = st.slider("Age", 18, 70, 30)
-    hours = st.slider("Hours per Week", 1, 80, 40)
-
-with col2:
-    education = st.selectbox("Education", df["education"].unique())
-    gender = st.selectbox("Gender", df["gender"].unique())
-
-if st.button("🚀 Predict Income"):
-
-    user_input = pd.DataFrame([{
-        "age": age,
-        "hours-per-week": hours,
-        "education": education,
-        "gender": gender
-    }])
-
-    user_input = pd.get_dummies(user_input)
-    user_input = user_input.reindex(columns=train_columns, fill_value=0)
-
-    model = models_dict[model_name]["model"]
-
-    pred = model.predict(user_input)[0]
-    prob = model.predict_proba(user_input)[0][1]
-
-    income_label = label_encoder.inverse_transform([pred])[0]
-
-    st.subheader("Prediction Result")
-
-    if income_label == ">50K":
-        st.success(f"Predicted Income: {income_label}")
-    else:
-        st.info(f"Predicted Income: {income_label}")
-
-    st.metric("Probability of >50K", f"{prob:.2%}")
+            st.success("Evaluation Complete")
