@@ -44,7 +44,7 @@ y = df[TARGET]
 train_columns = X.columns
 
 # ==========================================================
-# TRAIN MODELS (FAST + CACHED)
+# TRAIN MODELS
 # ==========================================================
 @st.cache_resource
 def train_models():
@@ -112,11 +112,11 @@ selected_model = models_dict[model_name]["model"]
 # ==========================================================
 # HEADER
 # ==========================================================
-st.title("🎓 BITS ML Classification Dashboard")
+st.title("🎓 Income Predictor")
 st.caption("Pre-trained models • Live predictor • Upload test dataset")
 
 # ==========================================================
-# LIVE INCOME PREDICTOR
+# LIVE PREDICTOR
 # ==========================================================
 st.subheader("🔮 Live Income Predictor")
 
@@ -146,37 +146,11 @@ if st.button("Predict Income"):
     label = label_encoder.inverse_transform([pred])[0]
 
     c1, c2 = st.columns([2,1])
-
-    with c1:
-        st.success(f"Predicted Income: {label}")
-
-    with c2:
-        st.metric(">50K Probability", f"{prob:.2%}")
+    c1.success(f"Predicted Income: {label}")
+    c2.metric(">50K Probability", f"{prob:.2%}")
 
 # ==========================================================
-# TARGET DISTRIBUTION
-# ==========================================================
-st.subheader("🎯 Target Distribution")
-
-dist = df[TARGET].value_counts().reset_index()
-dist.columns = ["Class", "Count"]
-dist["Class"] = label_encoder.inverse_transform(dist["Class"])
-
-chart = (
-    alt.Chart(dist)
-    .mark_bar()
-    .encode(
-        x="Class",
-        y="Count",
-        text="Count"
-    )
-    .properties(width=300, height=250)
-)
-
-st.altair_chart(chart, use_container_width=False)
-
-# ==========================================================
-# MODEL COMPARISON TABLE
+# MODEL TABLE
 # ==========================================================
 st.subheader("🏆 Pre-Trained Model Comparison")
 
@@ -209,7 +183,7 @@ styled_table = (
 st.dataframe(styled_table, use_container_width=True)
 
 # ==========================================================
-# TEST DATA EVALUATION
+# TEST DATA
 # ==========================================================
 if uploaded_file:
     st.subheader("📊 Test Dataset Evaluation")
@@ -231,22 +205,25 @@ if uploaded_file:
             preds = selected_model.predict(X_test)
             probs = selected_model.predict_proba(X_test)[:,1]
 
-            # Confusion Matrix
-            cm = confusion_matrix(y_test, preds)
-            fig, ax = plt.subplots(figsize=(3,3))
-            sns.heatmap(cm, annot=True, fmt="d", cmap="Blues", ax=ax)
-            ax.set_title("Confusion Matrix")
-            st.pyplot(fig)
+            # SIDE BY SIDE PLOTS
+            colA, colB = st.columns(2)
 
-            # ROC Curve
-            fpr, tpr, _ = roc_curve(y_test, probs)
-            fig2, ax2 = plt.subplots(figsize=(3,3))
-            ax2.plot(fpr, tpr)
-            ax2.plot([0,1],[0,1],'--')
-            ax2.set_title("ROC Curve")
-            st.pyplot(fig2)
+            with colA:
+                cm = confusion_matrix(y_test, preds)
+                fig1, ax1 = plt.subplots(figsize=(3,3))
+                sns.heatmap(cm, annot=True, fmt="d", cmap="Blues", ax=ax1)
+                ax1.set_title("Confusion Matrix")
+                st.pyplot(fig1)
 
-            # Metrics
+            with colB:
+                fpr, tpr, _ = roc_curve(y_test, probs)
+                fig2, ax2 = plt.subplots(figsize=(3,3))
+                ax2.plot(fpr, tpr)
+                ax2.plot([0,1],[0,1],'--')
+                ax2.set_title("ROC Curve")
+                st.pyplot(fig2)
+
+            # METRICS
             st.subheader("📊 Test Metrics")
 
             m1,m2,m3 = st.columns(3)
@@ -259,4 +236,15 @@ if uploaded_file:
             m5.metric("Recall", f"{recall_score(y_test,preds):.3f}")
             m6.metric("MCC", f"{matthews_corrcoef(y_test,preds):.3f}")
 
-            st.success("Evaluation Complete")
+            # MODEL COMMENTARY
+            st.divider()
+            st.subheader("📌 Model Performance Summary")
+
+            acc = accuracy_score(y_test,preds)
+
+            if acc > 0.85:
+                st.success("This model demonstrates strong predictive performance on the dataset with high accuracy and balanced classification ability.")
+            elif acc > 0.75:
+                st.info("This model performs reasonably well but may benefit from further tuning or feature engineering.")
+            else:
+                st.warning("This model shows weaker performance and may not generalize well to unseen data.")
