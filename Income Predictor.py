@@ -38,7 +38,7 @@ def safe_read_csv(file):
     st.stop()
 
 # ==========================================================
-# LOAD TRAIN DATA
+# LOAD DATA
 # ==========================================================
 @st.cache_data
 def load_data():
@@ -146,7 +146,7 @@ selected_model = models_dict[model_name]["model"]
 # HEADER
 # ==========================================================
 st.title("🎓 Income Classification Dashboard")
-st.caption("Pre-trained ML models • Live predictor • Dataset-aware explanation")
+st.caption("Pre-trained ML models • Live predictor • Stable KNN")
 
 # ==========================================================
 # LIVE PREDICTOR
@@ -217,31 +217,44 @@ if uploaded_file:
 
             y_test = test_df[TARGET]
 
-            # KNN safe evaluation
-            if model_name == "KNN" and len(X_test) > 15000:
-                X_eval = X_test.sample(15000, random_state=42)
-                y_eval = y_test.loc[X_eval.index]
+            # ========= SAFE KNN EVALUATION =========
+            if model_name == "KNN":
+                if len(X_test) > 8000:
+                    X_eval = X_test.sample(8000, random_state=42)
+                    y_eval = y_test.loc[X_eval.index]
+                else:
+                    X_eval = X_test
+                    y_eval = y_test
+
+                preds = selected_model.predict(X_eval)
+                probs = None  # skip predict_proba for large KNN
+                roc_available = False
+
             else:
                 X_eval = X_test
                 y_eval = y_test
-
-            preds = selected_model.predict(X_eval)
-            probs = selected_model.predict_proba(X_eval)[:, 1]
+                preds = selected_model.predict(X_eval)
+                probs = selected_model.predict_proba(X_eval)[:, 1]
+                roc_available = True
 
             # ================= METRICS =================
             st.subheader("📊 Test Metrics")
 
             acc = accuracy_score(y_eval, preds)
             f1 = f1_score(y_eval, preds)
-            roc_auc = roc_auc_score(y_eval, probs)
             prec = precision_score(y_eval, preds)
             rec = recall_score(y_eval, preds)
             mcc = matthews_corrcoef(y_eval, preds)
 
+            if roc_available:
+                roc_auc = roc_auc_score(y_eval, probs)
+            else:
+                roc_auc = None
+
             m1,m2,m3 = st.columns(3)
             m1.metric("Accuracy", f"{acc:.3f}")
             m2.metric("F1 Score", f"{f1:.3f}")
-            m3.metric("ROC AUC", f"{roc_auc:.3f}")
+            m3.metric("ROC AUC", f"{roc_auc:.3f}" if roc_auc else "Skipped")
 
             m4,m5,m6 = st.columns(3)
             m4.metric("Precision", f"{prec:.3f}")
@@ -259,60 +272,27 @@ if uploaded_file:
                 st.pyplot(fig1)
 
             with colB:
-                fpr, tpr, _ = roc_curve(y_eval, probs)
-                fig2, ax2 = plt.subplots(figsize=(3,3))
-                ax2.plot(fpr, tpr)
-                ax2.plot([0,1],[0,1],'--')
-                ax2.set_title("ROC Curve")
-                st.pyplot(fig2)
+                if roc_available:
+                    fpr, tpr, _ = roc_curve(y_eval, probs)
+                    fig2, ax2 = plt.subplots(figsize=(3,3))
+                    ax2.plot(fpr, tpr)
+                    ax2.plot([0,1],[0,1],'--')
+                    ax2.set_title("ROC Curve")
+                    st.pyplot(fig2)
+                else:
+                    st.info("ROC skipped for KNN to maintain performance.")
 
-            # ================= MODEL & DATASET SUMMARY =================
+            # ================= SUMMARY =================
             st.divider()
-            st.subheader("🧠 Model & Dataset Interpretation")
+            st.subheader("🧠 Model Interpretation")
 
-            total_samples = len(y_eval)
-            class_0 = (y_eval == 0).sum()
-            class_1 = (y_eval == 1).sum()
-            imbalance_ratio = round(class_1 / total_samples * 100, 2)
+            st.write(f"""
+            This model was evaluated on **{len(y_eval)} samples**.
 
-            st.markdown(f"""
-            ### 📊 Dataset Overview
-            - Samples evaluated: **{total_samples}**
-            - ≤50K: **{class_0}**
-            - >50K: **{class_1}**
-            - High-income ratio: **{imbalance_ratio}%**
-            """)
+            • Accuracy: **{acc:.2%}**  
+            • Precision: **{prec:.2f}**  
+            • Recall: **{rec:.2f}**  
+            • MCC: **{mcc:.2f}**
 
-            st.markdown("### 🤖 How This Model Works")
-
-            if model_name == "Logistic Regression":
-                st.markdown("Linear probability model using feature weights and sigmoid transformation.")
-            elif model_name == "Decision Tree":
-                st.markdown("Splits data using feature thresholds forming interpretable branches.")
-            elif model_name == "KNN":
-                st.markdown("Distance-based model predicting from nearest training examples.")
-            elif model_name == "Naive Bayes":
-                st.markdown("Probabilistic classifier assuming conditional independence.")
-            elif model_name == "Random Forest":
-                st.markdown("Ensemble of trees reducing variance and improving stability.")
-            elif model_name == "XGBoost":
-                st.markdown("Boosted trees correcting previous errors sequentially.")
-
-            st.markdown("### 📈 Performance Insight")
-
-            if acc > 0.85:
-                comment = "Strong predictive performance."
-            elif acc > 0.75:
-                comment = "Moderate performance."
-            else:
-                comment = "Performance can be improved."
-
-            st.markdown(f"""
-            - Accuracy: **{acc:.2%}**
-            - ROC AUC: **{roc_auc:.2f}**
-            - Precision: **{prec:.2f}**
-            - Recall: **{rec:.2f}**
-            - MCC: **{mcc:.2f}**
-
-            {comment}
+            {'Strong performance.' if acc > 0.85 else 'Moderate performance.'}
             """)
