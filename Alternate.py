@@ -1,15 +1,19 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
 
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import (
     accuracy_score,
     f1_score,
+    precision_score,
+    recall_score,
     roc_auc_score,
     matthews_corrcoef,
-    classification_report,
     confusion_matrix,
+    roc_curve,
 )
 
 from sklearn.compose import ColumnTransformer
@@ -18,24 +22,24 @@ from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from sklearn.impute import SimpleImputer
 
 from sklearn.linear_model import LogisticRegression
+from sklearn.ensemble import RandomForestClassifier
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.naive_bayes import GaussianNB
-from sklearn.ensemble import RandomForestClassifier
-
 from xgboost import XGBClassifier
 
-# ------------------------------------------------
+
+# ----------------------------------
 # PAGE CONFIG
-# ------------------------------------------------
-st.set_page_config(page_title="BITS ML Dashboard", layout="wide")
-
+# ----------------------------------
+st.set_page_config(layout="wide")
 st.title("🎓 BITS ML Classification Dashboard")
-st.markdown("Pre-trained models • Upload test dataset to evaluate")
 
-# ------------------------------------------------
+st.markdown("### 🔍 Predict • Evaluate • Understand")
+
+# ----------------------------------
 # LOAD DATA
-# ------------------------------------------------
+# ----------------------------------
 @st.cache_data
 def load_data():
     df = pd.read_csv("Data.csv")
@@ -45,205 +49,160 @@ def load_data():
 
 
 df = load_data()
+target = "income"
 
-target_column = "income"
+X = df.drop(target, axis=1)
+y = df[target]
 
-X = df.drop(target_column, axis=1)
-y = df[target_column]
-
-# Convert target to numeric if needed
 if y.dtype == "object":
     y = y.astype("category").cat.codes
 
-
-# ------------------------------------------------
+# ----------------------------------
 # PREPROCESSOR
-# ------------------------------------------------
-categorical_cols = X.select_dtypes(include=["object"]).columns
-numerical_cols = X.select_dtypes(exclude=["object"]).columns
+# ----------------------------------
+categorical_cols = X.select_dtypes(include="object").columns
+numerical_cols = X.select_dtypes(exclude="object").columns
 
-preprocessor = ColumnTransformer(
-    transformers=[
-        (
-            "num",
-            Pipeline(
-                [
-                    ("imputer", SimpleImputer(strategy="median")),
-                    ("scaler", StandardScaler()),
-                ]
-            ),
-            numerical_cols,
-        ),
-        (
-            "cat",
-            Pipeline(
-                [
-                    ("imputer", SimpleImputer(strategy="most_frequent")),
-                    (
-                        "encoder",
-                        OneHotEncoder(handle_unknown="ignore", sparse_output=False),
-                    ),
-                ]
-            ),
-            categorical_cols,
-        ),
-    ]
-)
+preprocessor = ColumnTransformer([
+    ("num", Pipeline([
+        ("imputer", SimpleImputer(strategy="median")),
+        ("scaler", StandardScaler())
+    ]), numerical_cols),
+
+    ("cat", Pipeline([
+        ("imputer", SimpleImputer(strategy="most_frequent")),
+        ("encoder", OneHotEncoder(handle_unknown="ignore", sparse_output=False))
+    ]), categorical_cols),
+])
 
 
-# ------------------------------------------------
-# TRAIN MODELS (FAST CLOUD VERSION)
-# ------------------------------------------------
+# ----------------------------------
+# TRAIN MODELS (FAST)
+# ----------------------------------
 @st.cache_resource
-def train_all_models():
-
+def train_models():
     models = {
         "Logistic Regression": LogisticRegression(max_iter=500),
+        "Random Forest": RandomForestClassifier(n_estimators=80, max_depth=10),
         "Decision Tree": DecisionTreeClassifier(max_depth=8),
         "KNN": KNeighborsClassifier(n_neighbors=5),
         "Naive Bayes": GaussianNB(),
-        "Random Forest": RandomForestClassifier(
-            n_estimators=80, max_depth=10, n_jobs=-1
-        ),
         "XGBoost": XGBClassifier(
             n_estimators=80,
             max_depth=4,
             learning_rate=0.1,
-            n_jobs=-1,
             eval_metric="logloss",
-            verbosity=0,
-        ),
+            verbosity=0
+        )
     }
 
-    # Sample for speed (important for cloud)
-    X_sample = X.sample(frac=0.7, random_state=42)
-    y_sample = y.loc[X_sample.index]
+    trained = {}
 
-    X_train, X_test, y_train, y_test = train_test_split(
-        X_sample, y_sample, test_size=0.2, random_state=42
-    )
+    for name, model in models.items():
+        pipe = Pipeline([
+            ("preprocessor", preprocessor),
+            ("classifier", model)
+        ])
+        pipe.fit(X, y)
+        trained[name] = pipe
 
-    trained_models = {}
-    results = []
-
-    progress = st.progress(0)
-
-    for i, (name, model) in enumerate(models.items()):
-
-        pipeline = Pipeline(
-            [("preprocessor", preprocessor), ("classifier", model)]
-        )
-
-        pipeline.fit(X_train, y_train)
-
-        preds = pipeline.predict(X_test)
-
-        accuracy = accuracy_score(y_test, preds)
-        f1 = f1_score(y_test, preds, average="weighted")
-        mcc = matthews_corrcoef(y_test, preds)
-
-        try:
-            probs = pipeline.predict_proba(X_test)[:, 1]
-            auc = roc_auc_score(y_test, probs)
-        except:
-            auc = 0
-
-        trained_models[name] = pipeline
-
-        results.append(
-            {
-                "Model": name,
-                "Accuracy": round(accuracy, 4),
-                "F1 Score": round(f1, 4),
-                "MCC": round(mcc, 4),
-                "ROC AUC": round(auc, 4),
-            }
-        )
-
-        progress.progress((i + 1) / len(models))
-
-    progress.empty()
-
-    leaderboard = pd.DataFrame(results).sort_values(
-        by="Accuracy", ascending=False
-    )
-
-    return trained_models, leaderboard
+    return trained
 
 
-models_dict, leaderboard_df = train_all_models()
+models_dict = train_models()
 
-# ------------------------------------------------
-# LEADERBOARD
-# ------------------------------------------------
-st.header("🏆 Model Leaderboard (Pre-Trained)")
+# ----------------------------------
+# MODEL SELECTOR
+# ----------------------------------
+selected_model = st.selectbox("Select Model", list(models_dict.keys()))
 
-st.dataframe(
-    leaderboard_df,
-    use_container_width=True,
-)
+st.markdown("---")
 
-# ------------------------------------------------
+# ----------------------------------
 # TEST DATA UPLOAD
-# ------------------------------------------------
-st.header("📂 Upload Test Dataset")
-
-uploaded_file = st.file_uploader("Upload CSV file", type=["csv"])
+# ----------------------------------
+uploaded_file = st.file_uploader("Upload Test Dataset (CSV)", type=["csv"])
 
 if uploaded_file:
 
     test_df = pd.read_csv(uploaded_file)
     test_df.columns = test_df.columns.str.strip()
 
-    st.subheader("Preview")
-    st.dataframe(test_df.head(), use_container_width=True)
+    X_test = test_df.drop(target, axis=1)
+    y_test = test_df[target]
 
-    if target_column not in test_df.columns:
-        st.error(f"Target column '{target_column}' not found in uploaded file.")
-        st.stop()
+    if y_test.dtype == "object":
+        y_test = y_test.astype("category").cat.codes
 
-    X_test_user = test_df.drop(target_column, axis=1)
-    y_test_user = test_df[target_column]
+    model = models_dict[selected_model]
+    preds = model.predict(X_test)
+    probs = model.predict_proba(X_test)[:, 1]
 
-    if y_test_user.dtype == "object":
-        y_test_user = y_test_user.astype("category").cat.codes
+    # ----------------------------------
+    # METRICS
+    # ----------------------------------
+    acc = accuracy_score(y_test, preds)
+    f1 = f1_score(y_test, preds)
+    precision = precision_score(y_test, preds)
+    recall = recall_score(y_test, preds)
+    auc = roc_auc_score(y_test, probs)
+    mcc = matthews_corrcoef(y_test, preds)
 
-    selected_model = st.selectbox(
-        "Select Model to Evaluate",
-        list(models_dict.keys()),
-    )
+    # ----------------------------------
+    # 🎯 PRIMARY FOCUS — PREDICTION SUMMARY
+    # ----------------------------------
+    st.header("🔮 Classification Summary")
 
-    if st.button("Evaluate Model"):
+    col1, col2 = st.columns(2)
 
-        model = models_dict[selected_model]
+    with col1:
+        st.metric("Predicted Class Distribution", 
+                  f"Class 1: {(preds==1).sum()} | Class 0: {(preds==0).sum()}")
 
-        preds = model.predict(X_test_user)
+    with col2:
+        st.metric("Accuracy", f"{acc:.4f}")
 
-        accuracy = accuracy_score(y_test_user, preds)
-        f1 = f1_score(y_test_user, preds, average="weighted")
-        mcc = matthews_corrcoef(y_test_user, preds)
+    st.markdown("---")
 
-        try:
-            probs = model.predict_proba(X_test_user)[:, 1]
-            auc = roc_auc_score(y_test_user, probs)
-        except:
-            auc = 0
+    # ----------------------------------
+    # 📊 MODEL PERFORMANCE (6 METRICS)
+    # ----------------------------------
+    st.header("📊 Model Performance")
 
-        st.header("📊 Test Results")
+    m1, m2, m3 = st.columns(3)
+    m4, m5, m6 = st.columns(3)
 
-        col1, col2, col3, col4 = st.columns(4)
+    m1.metric("Accuracy", f"{acc:.4f}")
+    m2.metric("Precision", f"{precision:.4f}")
+    m3.metric("Recall", f"{recall:.4f}")
+    m4.metric("F1 Score", f"{f1:.4f}")
+    m5.metric("ROC AUC", f"{auc:.4f}")
+    m6.metric("MCC", f"{mcc:.4f}")
 
-        col1.metric("Accuracy", f"{accuracy:.4f}")
-        col2.metric("F1 Score", f"{f1:.4f}")
-        col3.metric("MCC", f"{mcc:.4f}")
-        col4.metric("ROC AUC", f"{auc:.4f}")
+    st.markdown("---")
 
-        st.subheader("Classification Report")
-        report = classification_report(
-            y_test_user, preds, output_dict=True
-        )
-        st.dataframe(pd.DataFrame(report).transpose())
+    # ----------------------------------
+    # 🔥 CONFUSION MATRIX
+    # ----------------------------------
+    st.subheader("Confusion Matrix")
 
-        st.subheader("Confusion Matrix")
-        cm = confusion_matrix(y_test_user, preds)
-        st.dataframe(pd.DataFrame(cm))
+    cm = confusion_matrix(y_test, preds)
+
+    fig, ax = plt.subplots()
+    sns.heatmap(cm, annot=True, fmt="d", cmap="Blues")
+    st.pyplot(fig)
+
+    # ----------------------------------
+    # 📈 ROC CURVE
+    # ----------------------------------
+    st.subheader("ROC Curve")
+
+    fpr, tpr, _ = roc_curve(y_test, probs)
+
+    fig2, ax2 = plt.subplots()
+    ax2.plot(fpr, tpr)
+    ax2.plot([0, 1], [0, 1], linestyle="--")
+    ax2.set_xlabel("False Positive Rate")
+    ax2.set_ylabel("True Positive Rate")
+    ax2.set_title("ROC Curve")
+    st.pyplot(fig2)
