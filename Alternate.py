@@ -5,186 +5,246 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import LabelEncoder
 from sklearn.metrics import (
-    accuracy_score, precision_score, recall_score,
-    f1_score, roc_auc_score, matthews_corrcoef,
-    confusion_matrix, classification_report
+    accuracy_score,
+    precision_score,
+    recall_score,
+    f1_score,
+    roc_auc_score,
+    matthews_corrcoef,
+    confusion_matrix
 )
 
-from model.models import get_model
+from sklearn.linear_model import LogisticRegression
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.naive_bayes import GaussianNB
+from xgboost import XGBClassifier
 
-# ------------------ PAGE CONFIG ------------------ #
+# -------------------------------------------------
+# PAGE CONFIG
+# -------------------------------------------------
 st.set_page_config(
-    page_title="BITS ML Dashboard",
+    page_title="BITS ML Classification Dashboard",
     layout="wide"
 )
 
-# ------------------ HEADER ------------------ #
+# -------------------------------------------------
+# CUSTOM CSS (Professional Look)
+# -------------------------------------------------
 st.markdown("""
-<h1 style='font-size:40px;'>🎓 BITS ML Classification Dashboard</h1>
-<p style='color:gray;'>Pre-trained models • Upload test dataset to evaluate</p>
+<style>
+.main {background-color:#0E1117;}
+h1,h2,h3,h4 {color:white;}
+.metric-box {
+    background: #1E222A;
+    padding:15px;
+    border-radius:12px;
+    text-align:center;
+}
+.big-prediction {
+    background: linear-gradient(135deg,#1f77b4,#4fa3ff);
+    padding:40px;
+    border-radius:16px;
+    text-align:center;
+    color:white;
+    font-size:32px;
+    font-weight:bold;
+}
+</style>
 """, unsafe_allow_html=True)
 
-# ------------------ LOAD DATA ------------------ #
-@st.cache_data
-def load_data():
+# -------------------------------------------------
+# LOAD & PREPROCESS DATA
+# -------------------------------------------------
+@st.cache_resource
+def load_and_train():
+
     df = pd.read_csv("Data.csv")
     df.columns = df.columns.str.strip()
-    return df
 
-df = load_data()
+    target_column = "income"
 
-# ------------------ TARGET DISTRIBUTION ------------------ #
-st.markdown("## 🎯 Target Distribution")
-
-col1, col2 = st.columns([1, 2])
-
-target_column = "income"
-
-target_counts = df[target_column].value_counts()
-target_percent = target_counts / len(df) * 100
-
-# ----- Donut Chart ----- #
-with col1:
-    fig, ax = plt.subplots(figsize=(3, 3))
-    ax.pie(
-        target_counts,
-        labels=target_counts.index,
-        autopct="%1.1f%%",
-        startangle=90,
-        wedgeprops={'width':0.4}
-    )
-    ax.set_title("Class Split")
-    st.pyplot(fig)
-
-# ------------------ TRAIN MODELS ------------------ #
-@st.cache_resource
-def train_models():
     X = df.drop(target_column, axis=1)
     y = df[target_column]
 
-    X = pd.get_dummies(X)
+    # Encode categorical
+    X = pd.get_dummies(X, drop_first=True)
+
+    le = LabelEncoder()
+    y_encoded = le.fit_transform(y)
 
     X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=42
+        X, y_encoded,
+        test_size=0.2,
+        random_state=42
     )
 
-    model_names = [
-        "Logistic Regression",
-        "Decision Tree",
-        "KNN",
-        "Naive Bayes",
-        "Random Forest",
-        "XGBoost"
-    ]
+    models = {
+        "Logistic Regression": LogisticRegression(max_iter=400),
+        "Decision Tree": DecisionTreeClassifier(max_depth=6),
+        "Random Forest": RandomForestClassifier(n_estimators=50, max_depth=8),
+        "KNN": KNeighborsClassifier(n_neighbors=5),
+        "Naive Bayes": GaussianNB(),
+        "XGBoost": XGBClassifier(
+            n_estimators=50,
+            max_depth=4,
+            learning_rate=0.1,
+            eval_metric="logloss",
+            verbosity=0
+        )
+    }
 
     results = []
+    trained_models = {}
 
-    for name in model_names:
-        model = get_model(name, X_train)
-
+    for name, model in models.items():
         model.fit(X_train, y_train)
         preds = model.predict(X_test)
-
-        acc = accuracy_score(y_test, preds)
-        prec = precision_score(y_test, preds, average="weighted")
-        rec = recall_score(y_test, preds, average="weighted")
-        f1 = f1_score(y_test, preds, average="weighted")
-        mcc = matthews_corrcoef(y_test, preds)
-
-        if hasattr(model, "predict_proba"):
-            probs = model.predict_proba(X_test)[:, 1]
-            auc = roc_auc_score(
-                (y_test == y_test.unique()[1]).astype(int),
-                probs
-            )
-        else:
-            auc = np.nan
+        probs = model.predict_proba(X_test)[:, 1]
 
         results.append({
             "Model": name,
-            "Accuracy": acc,
-            "Precision": prec,
-            "Recall": rec,
-            "F1": f1,
-            "ROC AUC": auc,
-            "MCC": mcc
+            "Accuracy": accuracy_score(y_test, preds),
+            "Precision": precision_score(y_test, preds),
+            "Recall": recall_score(y_test, preds),
+            "F1 Score": f1_score(y_test, preds),
+            "ROC AUC": roc_auc_score(y_test, probs),
+            "MCC": matthews_corrcoef(y_test, preds)
         })
 
-    return pd.DataFrame(results).sort_values("Accuracy", ascending=False)
+        trained_models[name] = model
 
-leaderboard = train_models()
+    results_df = pd.DataFrame(results).sort_values("Accuracy", ascending=False)
 
-# ------------------ MODEL LEADERBOARD ------------------ #
-st.markdown("## 🏆 Model Leaderboard (Pre-Trained)")
+    return df, results_df, trained_models, le
 
-styled_lb = leaderboard.style.format({
-    "Accuracy": "{:.3f}",
-    "Precision": "{:.3f}",
-    "Recall": "{:.3f}",
-    "F1": "{:.3f}",
-    "ROC AUC": "{:.3f}",
-    "MCC": "{:.3f}"
-}).background_gradient(cmap="Blues", subset=["Accuracy"])
 
-st.dataframe(styled_lb, use_container_width=True)
+# -------------------------------------------------
+# TRAIN ON STARTUP
+# -------------------------------------------------
+with st.spinner("Training Pre-Trained Models..."):
+    df, leaderboard, models_dict, label_encoder = load_and_train()
 
-# ------------------ TEST DATA SECTION ------------------ #
-st.markdown("## 📂 Upload Test Dataset")
+# -------------------------------------------------
+# HEADER
+# -------------------------------------------------
+st.title("🎓 BITS ML Classification Dashboard")
+st.caption("Pre-trained models • Upload test dataset to evaluate")
 
-uploaded_file = st.file_uploader("Upload CSV file", type="csv")
+# -------------------------------------------------
+# TARGET DISTRIBUTION (Clean Donut)
+# -------------------------------------------------
+st.subheader("🎯 Target Distribution")
 
-if uploaded_file:
+target_counts = df["income"].value_counts()
+fig, ax = plt.subplots(figsize=(4,4))
+ax.pie(
+    target_counts,
+    labels=target_counts.index,
+    autopct="%1.1f%%",
+    startangle=90
+)
+centre_circle = plt.Circle((0,0),0.60,fc='white')
+fig.gca().add_artist(centre_circle)
+ax.axis('equal')
+st.pyplot(fig)
+
+# -------------------------------------------------
+# MODEL LEADERBOARD
+# -------------------------------------------------
+st.subheader("🏆 Model Performance (Pre-Trained)")
+
+st.dataframe(
+    leaderboard.style.format({
+        "Accuracy": "{:.3f}",
+        "Precision": "{:.3f}",
+        "Recall": "{:.3f}",
+        "F1 Score": "{:.3f}",
+        "ROC AUC": "{:.3f}",
+        "MCC": "{:.3f}"
+    }),
+    use_container_width=True
+)
+
+# -------------------------------------------------
+# BEST MODEL HIGHLIGHT
+# -------------------------------------------------
+best_model_name = leaderboard.iloc[0]["Model"]
+
+st.markdown(
+    f"""
+    <div class="big-prediction">
+        Best Performing Model: {best_model_name}
+    </div>
+    """,
+    unsafe_allow_html=True
+)
+
+# -------------------------------------------------
+# TEST DATA SECTION
+# -------------------------------------------------
+st.divider()
+st.subheader("📂 Upload Test Dataset")
+
+uploaded_file = st.file_uploader("Upload CSV Test File", type="csv")
+
+if uploaded_file is not None:
 
     test_df = pd.read_csv(uploaded_file)
     test_df.columns = test_df.columns.str.strip()
 
-    model_choice = st.selectbox(
-        "Select Model",
-        leaderboard["Model"].tolist()
-    )
+    target_column = "income"
 
-    X_test = test_df.drop(target_column, axis=1)
-    y_test = test_df[target_column]
+    if target_column not in test_df.columns:
+        st.error("Test file must contain 'income' column.")
+    else:
 
-    X_test = pd.get_dummies(X_test)
-    X_test = X_test.reindex(columns=pd.get_dummies(df.drop(target_column, axis=1)).columns, fill_value=0)
+        X_test = test_df.drop(target_column, axis=1)
+        y_test = test_df[target_column]
 
-    model = get_model(model_choice, X_test)
-    model.fit(pd.get_dummies(df.drop(target_column, axis=1)), df[target_column])
+        X_test = pd.get_dummies(X_test)
+        y_test = label_encoder.transform(y_test)
 
-    preds = model.predict(X_test)
+        # Align columns with training
+        missing_cols = set(df.drop(target_column,axis=1).columns) - set(X_test.columns)
+        for col in missing_cols:
+            X_test[col] = 0
 
-    acc = accuracy_score(y_test, preds)
-    prec = precision_score(y_test, preds, average="weighted")
-    rec = recall_score(y_test, preds, average="weighted")
-    f1 = f1_score(y_test, preds, average="weighted")
-    mcc = matthews_corrcoef(y_test, preds)
+        X_test = X_test.reindex(sorted(X_test.columns), axis=1)
 
-    # ------------------ RESULTS DISPLAY ------------------ #
-    st.markdown("## 🔍 Prediction Summary")
+        selected_model = st.selectbox("Select Model for Evaluation", leaderboard["Model"])
 
-    m1, m2, m3, m4, m5 = st.columns(5)
+        model = models_dict[selected_model]
+        preds = model.predict(X_test)
+        probs = model.predict_proba(X_test)[:,1]
 
-    m1.metric("Accuracy", f"{acc:.3f}")
-    m2.metric("Precision", f"{prec:.3f}")
-    m3.metric("Recall", f"{rec:.3f}")
-    m4.metric("F1 Score", f"{f1:.3f}")
-    m5.metric("MCC", f"{mcc:.3f}")
+        # METRICS
+        acc = accuracy_score(y_test, preds)
+        f1 = f1_score(y_test, preds)
+        roc = roc_auc_score(y_test, probs)
+        mcc = matthews_corrcoef(y_test, preds)
 
-    # ------------------ CONFUSION MATRIX ------------------ #
-    st.markdown("### 🔢 Confusion Matrix")
+        col1,col2,col3,col4 = st.columns(4)
 
-    cm = confusion_matrix(y_test, preds)
+        col1.metric("Accuracy", f"{acc:.3f}")
+        col2.metric("F1 Score", f"{f1:.3f}")
+        col3.metric("ROC AUC", f"{roc:.3f}")
+        col4.metric("MCC", f"{mcc:.3f}")
 
-    fig, ax = plt.subplots(figsize=(4, 3))
-    sns.heatmap(cm, annot=True, fmt="d", cmap="Blues", ax=ax)
-    st.pyplot(fig)
+        # Confusion Matrix
+        st.subheader("Confusion Matrix")
+        cm = confusion_matrix(y_test, preds)
 
-    # ------------------ CLASSIFICATION REPORT ------------------ #
-    st.markdown("### 📊 Detailed Classification Report")
+        fig2, ax2 = plt.subplots(figsize=(4,4))
+        sns.heatmap(cm, annot=True, fmt="d", cmap="Blues", ax=ax2)
+        st.pyplot(fig2)
 
-    report = classification_report(y_test, preds, output_dict=True)
-    report_df = pd.DataFrame(report).transpose()
+        # Prediction Distribution
+        st.subheader("Prediction Distribution")
 
-    st.dataframe(report_df.style.format("{:.3f}"), use_container_width=True)
+        fig3, ax3 = plt.subplots(figsize=(4,3))
+        sns.countplot(x=preds, ax=ax3)
+        st.pyplot(fig3)
