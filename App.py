@@ -15,18 +15,14 @@ from models import get_all_models
 
 st.set_page_config(layout="wide")
 
-# ==========================================================
-# LOAD MODELS
-# ==========================================================
+
 @st.cache_resource
 def load_models():
     return get_all_models()
 
 models_dict, train_columns, label_encoder = load_models()
 
-# ==========================================================
-# SIDEBAR
-# ==========================================================
+
 st.sidebar.title("⚙ Configuration")
 
 model_name = st.sidebar.selectbox(
@@ -40,15 +36,11 @@ uploaded_file = st.sidebar.file_uploader(
 
 selected_model = models_dict[model_name]
 
-# ==========================================================
-# HEADER
-# ==========================================================
-st.title("🎓 Income Classification Dashboard")
+
+st.title("🎓 Income Predictor")
 st.caption("Pre-trained models • Live Prediction • Test Evaluation")
 
-# ==========================================================
-# 🔮 LIVE PREDICTOR (NOW AT TOP)
-# ==========================================================
+
 st.subheader("🔮 Live Income Predictor")
 
 df = pd.read_csv("Data.csv")
@@ -92,9 +84,7 @@ if st.button("Predict Income"):
 
 st.divider()
 
-# ==========================================================
-# 🏆 PRE-TRAINED MODEL METRICS (NOW BELOW LIVE)
-# ==========================================================
+
 @st.cache_data
 def compute_pretrained_metrics():
 
@@ -153,9 +143,7 @@ st.dataframe(styled_df, width="stretch")
 
 st.divider()
 
-# ==========================================================
-# 📊 TEST DATA EVALUATION
-# ==========================================================
+
 if uploaded_file:
 
     st.subheader("📊 Test Dataset Evaluation")
@@ -226,9 +214,7 @@ if uploaded_file:
                 ax2.set_title("ROC Curve")
                 st.pyplot(fig2)
 
-            # ==========================================================
-            # 🧠 ELABORATE SUMMARY
-            # ==========================================================
+            
             st.divider()
             st.subheader("🧠 Detailed Performance Analysis")
 
