@@ -5,199 +5,203 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import LabelEncoder
+from sklearn.pipeline import Pipeline
+from sklearn.compose import ColumnTransformer
+from sklearn.preprocessing import OneHotEncoder, StandardScaler
+
+from sklearn.linear_model import LogisticRegression
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.naive_bayes import GaussianNB
+from sklearn.ensemble import RandomForestClassifier
+from xgboost import XGBClassifier
+
 from sklearn.metrics import (
-    accuracy_score, f1_score, precision_score,
-    recall_score, roc_auc_score, matthews_corrcoef,
+    accuracy_score, precision_score, recall_score,
+    f1_score, roc_auc_score, matthews_corrcoef,
     confusion_matrix, roc_curve
 )
 
-# ------------------------------------------------
+# --------------------------------------------------
 # PAGE CONFIG
-# ------------------------------------------------
+# --------------------------------------------------
 st.set_page_config(layout="wide")
-
-# ------------------------------------------------
-# CUSTOM CSS (Compact Professional Look)
-# ------------------------------------------------
-st.markdown("""
-<style>
-.big-title {
-    font-size: 42px;
-    font-weight: 700;
-}
-.subtle {
-    color: #9aa0a6;
-}
-.hero-box {
-    background: linear-gradient(135deg, #1f2a44, #111827);
-    padding: 30px;
-    border-radius: 16px;
-    text-align: center;
-}
-.hero-text {
-    font-size: 40px;
-    font-weight: 800;
-    color: #00d4ff;
-}
-.small-title {
-    font-size: 18px;
-    font-weight: 600;
-}
-.metric-card {
-    background-color: #111827;
-    padding: 15px;
-    border-radius: 12px;
-    text-align: center;
-}
-</style>
-""", unsafe_allow_html=True)
-
-# ------------------------------------------------
-# TITLE
-# ------------------------------------------------
-st.markdown('<div class="big-title">🎓 BITS ML Classification Dashboard</div>', unsafe_allow_html=True)
-st.markdown('<div class="subtle">Pre-trained models • Upload test dataset to evaluate</div>', unsafe_allow_html=True)
+st.title("🎓 BITS ML Classification Dashboard")
+st.markdown("Pre-trained models • Upload test dataset to evaluate")
 st.markdown("---")
 
-
-# ------------------------------------------------
+# --------------------------------------------------
 # LOAD DATA
-# ------------------------------------------------
-df = pd.read_csv("Data.csv")
-df.columns = df.columns.str.strip()
+# --------------------------------------------------
+@st.cache_data
+def load_data():
+    df = pd.read_csv("Data.csv")
+    df.columns = df.columns.str.strip()
+    return df
+
+df = load_data()
+
 target = "income"
 
 X = df.drop(target, axis=1)
 y = df[target]
 
-if y.dtype == "object":
-    y = y.astype("category").cat.codes
+# Encode target
+le = LabelEncoder()
+y = le.fit_transform(y)
 
-# ------------------------------------------------
-# TARGET DISTRIBUTION (COMPACT)
-# ------------------------------------------------
+# Identify columns
+num_cols = X.select_dtypes(include=np.number).columns
+cat_cols = X.select_dtypes(exclude=np.number).columns
+
+# Preprocessor
+preprocessor = ColumnTransformer([
+    ("num", StandardScaler(), num_cols),
+    ("cat", OneHotEncoder(handle_unknown="ignore"), cat_cols)
+])
+
+# --------------------------------------------------
+# PRETRAIN MODELS (FAST SETTINGS)
+# --------------------------------------------------
+@st.cache_resource
+def train_models():
+    models = {
+        "Logistic Regression": LogisticRegression(max_iter=300),
+        "Decision Tree": DecisionTreeClassifier(max_depth=8),
+        "KNN": KNeighborsClassifier(n_neighbors=5),
+        "Naive Bayes": GaussianNB(),
+        "Random Forest": RandomForestClassifier(
+            n_estimators=50,
+            max_depth=8,
+            n_jobs=-1
+        ),
+        "XGBoost": XGBClassifier(
+            n_estimators=50,
+            max_depth=4,
+            learning_rate=0.1,
+            subsample=0.8,
+            colsample_bytree=0.8,
+            eval_metric="logloss",
+            use_label_encoder=False,
+            n_jobs=-1
+        )
+    }
+
+    results = []
+    trained_models = {}
+
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.2, random_state=42
+    )
+
+    for name, model in models.items():
+
+        pipe = Pipeline([
+            ("prep", preprocessor),
+            ("model", model)
+        ])
+
+        pipe.fit(X_train, y_train)
+
+        preds = pipe.predict(X_test)
+        probs = pipe.predict_proba(X_test)[:, 1]
+
+        results.append({
+            "Model": name,
+            "Accuracy": accuracy_score(y_test, preds),
+            "Precision": precision_score(y_test, preds),
+            "Recall": recall_score(y_test, preds),
+            "F1 Score": f1_score(y_test, preds),
+            "ROC AUC": roc_auc_score(y_test, probs),
+            "MCC": matthews_corrcoef(y_test, preds)
+        })
+
+        trained_models[name] = pipe
+
+    leaderboard = pd.DataFrame(results).sort_values(
+        by="Accuracy", ascending=False
+    )
+
+    return trained_models, leaderboard
+
+
+models, leaderboard_df = train_models()
+
+# --------------------------------------------------
+# TARGET VISUALIZATION
+# --------------------------------------------------
 col1, col2 = st.columns([1,1])
 
 with col1:
-    st.markdown("### 🎯 Target Distribution")
-
+    st.subheader("🎯 Target Distribution")
     fig, ax = plt.subplots(figsize=(3,3))
-    y.value_counts().plot.pie(
-        autopct="%1.1f%%",
-        ax=ax
-    )
+    df[target].value_counts().plot.pie(autopct="%1.1f%%", ax=ax)
     ax.set_ylabel("")
     st.pyplot(fig)
 
 with col2:
-    st.markdown("### 📊 Class Counts")
-    st.dataframe(y.value_counts().to_frame("Count"))
-
-
-st.markdown("---")
-
-
-# ------------------------------------------------
-# PRETRAINED RESULTS (ASSUME ALREADY COMPUTED)
-# ------------------------------------------------
-st.markdown("## 🏆 Pre-Trained Model Leaderboard")
-
-leaderboard_df = st.session_state.get("leaderboard_df")
-
-if leaderboard_df is not None:
-
-    best_model = leaderboard_df.iloc[0]
-
-    colA, colB, colC = st.columns(3)
-
-    colA.markdown('<div class="metric-card"><div class="small-title">Best Model</div><div class="hero-text">'+best_model["Model"]+'</div></div>', unsafe_allow_html=True)
-    colB.metric("Accuracy", f"{best_model['Accuracy']:.4f}")
-    colC.metric("ROC AUC", f"{best_model['ROC AUC']:.4f}")
-
-    numeric_cols = leaderboard_df.select_dtypes(include="number").columns
-
-    styled = leaderboard_df.style \
-        .format({col: "{:.4f}" for col in numeric_cols}) \
-        .background_gradient(subset=numeric_cols, cmap="viridis")
-
-    st.dataframe(styled, use_container_width=True)
-
+    st.subheader("📊 Pre-trained Leaderboard")
+    st.dataframe(leaderboard_df, use_container_width=True)
 
 st.markdown("---")
 
+# --------------------------------------------------
+# TEST DATA EVALUATION
+# --------------------------------------------------
+st.subheader("📂 Evaluate Model on Test Dataset")
 
-# ------------------------------------------------
-# UPLOAD TEST DATA
-# ------------------------------------------------
-st.markdown("## 📂 Evaluate on Test Dataset")
+model_choice = st.selectbox(
+    "Select Model",
+    leaderboard_df["Model"]
+)
 
-uploaded_file = st.file_uploader("Upload CSV", type=["csv"])
+uploaded_file = st.file_uploader("Upload Test CSV", type=["csv"])
 
 if uploaded_file:
-
     test_df = pd.read_csv(uploaded_file)
     test_df.columns = test_df.columns.str.strip()
 
-    X_test = test_df.drop(target, axis=1)
-    y_test = test_df[target]
+    if target not in test_df.columns:
+        st.error(f"Test file must contain '{target}' column.")
+    else:
+        X_test = test_df.drop(target, axis=1)
+        y_test = le.transform(test_df[target])
 
-    if y_test.dtype == "object":
-        y_test = y_test.astype("category").cat.codes
+        selected_model = models[model_choice]
 
-    model = st.session_state.get("selected_model")
-
-    if model:
-
-        preds = model.predict(X_test)
-        probs = model.predict_proba(X_test)[:,1]
+        preds = selected_model.predict(X_test)
+        probs = selected_model.predict_proba(X_test)[:,1]
 
         st.markdown("---")
+        st.subheader("🔮 Classification Result")
 
-        # HERO RESULT
-        st.markdown("## 🔮 Classification Result")
+        acc = accuracy_score(y_test, preds)
 
-        final_acc = accuracy_score(y_test, preds)
+        st.metric("Accuracy", f"{acc:.4f}")
 
-        st.markdown(
-            f"""
-            <div class="hero-box">
-                <div class="small-title">Overall Accuracy</div>
-                <div class="hero-text">{final_acc:.4f}</div>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
-
-        st.markdown("---")
-
-        # METRICS GRID
-        st.markdown("### 📊 Performance Metrics")
-
-        m1, m2, m3, m4, m5, m6 = st.columns(6)
-
+        m1, m2, m3, m4, m5 = st.columns(5)
         m1.metric("Precision", f"{precision_score(y_test, preds):.3f}")
         m2.metric("Recall", f"{recall_score(y_test, preds):.3f}")
-        m3.metric("F1", f"{f1_score(y_test, preds):.3f}")
+        m3.metric("F1 Score", f"{f1_score(y_test, preds):.3f}")
         m4.metric("ROC AUC", f"{roc_auc_score(y_test, probs):.3f}")
         m5.metric("MCC", f"{matthews_corrcoef(y_test, preds):.3f}")
-        m6.metric("Samples", len(y_test))
 
         st.markdown("---")
 
-        # SMALL SIDE-BY-SIDE GRAPHS
-        g1, g2 = st.columns(2)
+        c1, c2 = st.columns(2)
 
-        with g1:
+        with c1:
             st.markdown("##### Confusion Matrix")
             cm = confusion_matrix(y_test, preds)
-            fig_cm, ax_cm = plt.subplots(figsize=(3,2.5))
+            fig_cm, ax_cm = plt.subplots(figsize=(3,3))
             sns.heatmap(cm, annot=True, fmt="d", cmap="Blues", ax=ax_cm)
             st.pyplot(fig_cm)
 
-        with g2:
+        with c2:
             st.markdown("##### ROC Curve")
             fpr, tpr, _ = roc_curve(y_test, probs)
-            fig_roc, ax_roc = plt.subplots(figsize=(3,2.5))
+            fig_roc, ax_roc = plt.subplots(figsize=(3,3))
             ax_roc.plot(fpr, tpr)
             ax_roc.plot([0,1],[0,1], linestyle="--")
             st.pyplot(fig_roc)
