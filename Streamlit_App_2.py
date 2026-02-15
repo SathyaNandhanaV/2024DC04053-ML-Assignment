@@ -1,81 +1,27 @@
-# Indicator.py
-
 import streamlit as st
 import pandas as pd
+import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import LabelEncoder
 from sklearn.metrics import (
     accuracy_score, precision_score, recall_score,
     f1_score, roc_auc_score, matthews_corrcoef,
     confusion_matrix, roc_curve
 )
 
-from models import get_all_models
+from models import get_all_models   # 🔥 IMPORT FROM models.py
 
-
-# ==========================================================
-# PAGE CONFIG
-# ==========================================================
 st.set_page_config(layout="wide")
-st.title("🎓 Income Prediction Dashboard")
-
 
 # ==========================================================
-# SAFE CSV LOADER
-# ==========================================================
-def safe_read_csv(file):
-    for enc in ["utf-8", "utf-8-sig", "latin1"]:
-        try:
-            return pd.read_csv(file, encoding=enc)
-        except:
-            continue
-    st.error("Unable to read CSV file.")
-    st.stop()
-
-
-# ==========================================================
-# LOAD TRAINING DATA
-# ==========================================================
-@st.cache_data
-def load_data():
-    return safe_read_csv("Data.csv")
-
-
-df = load_data()
-df.columns = df.columns.str.strip()
-
-TARGET = "income"
-
-label_encoder = LabelEncoder()
-df[TARGET] = label_encoder.fit_transform(df[TARGET])
-
-X = df.drop(columns=[TARGET])
-y = df[TARGET]
-
-
-# ==========================================================
-# TRAIN MODELS (CACHED)
+# LOAD MODELS (CACHED)
 # ==========================================================
 @st.cache_resource
 def load_models():
+    return get_all_models()
 
-    models = get_all_models(X)
-
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=42
-    )
-
-    for model in models.values():
-        model.fit(X_train, y_train)
-
-    return models
-
-
-models_dict = load_models()
-
+models_dict, train_columns, label_encoder = load_models()
 
 # ==========================================================
 # SIDEBAR
@@ -87,42 +33,64 @@ model_name = st.sidebar.selectbox(
     list(models_dict.keys())
 )
 
-uploaded_file = st.sidebar.file_uploader("Upload Test Dataset")
+uploaded_file = st.sidebar.file_uploader(
+    "Upload Test Dataset (CSV)"
+)
 
 selected_model = models_dict[model_name]
 
+# ==========================================================
+# HEADER
+# ==========================================================
+st.title("🎓 Income Predictor")
+st.caption("Pre-trained models • Live Predictor")
 
 # ==========================================================
 # LIVE PREDICTOR
 # ==========================================================
 st.subheader("🔮 Live Income Predictor")
 
-sample_input = {}
+# Load dataset again for correlation
+df = pd.read_csv("Data.csv")
+df.columns = df.columns.str.strip()
 
-for col in X.columns[:5]:
-    if X[col].dtype == "object":
-        sample_input[col] = st.selectbox(col, df[col].unique())
-    else:
-        sample_input[col] = st.number_input(
-            col,
-            float(df[col].min()),
-            float(df[col].max()),
-            float(df[col].mean())
+TARGET = "income"
+df[TARGET] = label_encoder.transform(df[TARGET])
+
+corr = df.corr(numeric_only=True)[TARGET].abs().sort_values(ascending=False)
+top_features = corr.index[1:6]
+
+cols = st.columns(3)
+user_input = {}
+
+for i, feature in enumerate(top_features):
+    with cols[i % 3]:
+        user_input[feature] = st.slider(
+            feature,
+            int(df[feature].min()),
+            int(df[feature].max()),
+            int(df[feature].mean())
         )
 
 if st.button("Predict Income"):
-    input_df = pd.DataFrame([sample_input])
+    input_df = pd.DataFrame([user_input])
+    input_df = pd.get_dummies(input_df, drop_first=True)
+
+    for col in train_columns:
+        if col not in input_df.columns:
+            input_df[col] = 0
+
+    input_df = input_df[train_columns].astype(float)
 
     pred = selected_model.predict(input_df)[0]
     prob = selected_model.predict_proba(input_df)[0][1]
-
     label = label_encoder.inverse_transform([pred])[0]
 
-    st.success(f"Predicted Income: {label}")
-    st.metric(">50K Probability", f"{prob:.2%}")
+    c1, c2 = st.columns([2,1])
+    c1.success(f"Predicted Income: {label}")
+    c2.metric(">50K Probability", f"{prob:.2%}")
 
 st.divider()
-
 
 # ==========================================================
 # TEST DATA EVALUATION
@@ -131,20 +99,30 @@ if uploaded_file:
 
     st.subheader("📊 Test Dataset Evaluation")
 
-    test_df = safe_read_csv(uploaded_file)
+    test_df = pd.read_csv(uploaded_file)
     test_df.columns = test_df.columns.str.strip()
 
     if TARGET not in test_df.columns:
         st.error("Target column missing in test dataset.")
     else:
-        if st.button("Apply Model"):
+
+        if st.button("Apply Model on Test Data"):
 
             test_df[TARGET] = label_encoder.transform(test_df[TARGET])
 
-            X_test = test_df.drop(columns=[TARGET])
+            X_test = pd.get_dummies(
+                test_df.drop(columns=[TARGET]),
+                drop_first=True
+            )
+
+            for col in train_columns:
+                if col not in X_test.columns:
+                    X_test[col] = 0
+
+            X_test = X_test[train_columns].astype(float)
             y_test = test_df[TARGET]
 
-            # Limit KNN to 1000 samples
+            # 🔥 KNN LIMIT FIX
             if model_name == "KNN" and len(X_test) > 1000:
                 X_test = X_test.sample(1000, random_state=42)
                 y_test = y_test.loc[X_test.index]
@@ -152,35 +130,36 @@ if uploaded_file:
             preds = selected_model.predict(X_test)
             probs = selected_model.predict_proba(X_test)[:, 1]
 
-            # Metrics
             acc = accuracy_score(y_test, preds)
-            prec = precision_score(y_test, preds)
-            rec = recall_score(y_test, preds)
             f1 = f1_score(y_test, preds)
             roc_auc = roc_auc_score(y_test, probs)
+            prec = precision_score(y_test, preds)
+            rec = recall_score(y_test, preds)
             mcc = matthews_corrcoef(y_test, preds)
 
-            col1, col2, col3 = st.columns(3)
-            col1.metric("Accuracy", f"{acc:.3f}")
-            col2.metric("Precision", f"{prec:.3f}")
-            col3.metric("Recall", f"{rec:.3f}")
+            st.subheader("📊 Test Metrics")
 
-            col4, col5, col6 = st.columns(3)
-            col4.metric("F1 Score", f"{f1:.3f}")
-            col5.metric("ROC AUC", f"{roc_auc:.3f}")
-            col6.metric("MCC", f"{mcc:.3f}")
+            m1,m2,m3 = st.columns(3)
+            m1.metric("Accuracy", f"{acc:.3f}")
+            m2.metric("F1 Score", f"{f1:.3f}")
+            m3.metric("ROC AUC", f"{roc_auc:.3f}")
 
-            # Confusion Matrix
-            c1, c2 = st.columns(2)
+            m4,m5,m6 = st.columns(3)
+            m4.metric("Precision", f"{prec:.3f}")
+            m5.metric("Recall", f"{rec:.3f}")
+            m6.metric("MCC", f"{mcc:.3f}")
 
-            with c1:
+            colA, colB = st.columns(2)
+
+            with colA:
                 cm = confusion_matrix(y_test, preds)
-                fig, ax = plt.subplots(figsize=(3,3))
-                sns.heatmap(cm, annot=True, fmt="d", cmap="Blues", ax=ax)
-                ax.set_title("Confusion Matrix")
-                st.pyplot(fig)
+                fig1, ax1 = plt.subplots(figsize=(3,3))
+                sns.heatmap(cm, annot=True, fmt="d",
+                            cmap="Blues", ax=ax1)
+                ax1.set_title("Confusion Matrix")
+                st.pyplot(fig1)
 
-            with c2:
+            with colB:
                 fpr, tpr, _ = roc_curve(y_test, probs)
                 fig2, ax2 = plt.subplots(figsize=(3,3))
                 ax2.plot(fpr, tpr)
