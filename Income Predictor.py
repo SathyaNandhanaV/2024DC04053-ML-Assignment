@@ -105,24 +105,10 @@ def train_models():
         X, y, test_size=0.2, random_state=42
     )
 
-    results = {}
-
     for name, model in models.items():
         model.fit(X_train, y_train)
-        preds = model.predict(X_test)
-        probs = model.predict_proba(X_test)[:, 1]
 
-        results[name] = {
-            "model": model,
-            "accuracy": accuracy_score(y_test, preds),
-            "precision": precision_score(y_test, preds),
-            "recall": recall_score(y_test, preds),
-            "f1": f1_score(y_test, preds),
-            "roc_auc": roc_auc_score(y_test, probs),
-            "mcc": matthews_corrcoef(y_test, preds)
-        }
-
-    return results
+    return models
 
 models_dict = train_models()
 
@@ -140,54 +126,13 @@ uploaded_file = st.sidebar.file_uploader(
     "Upload Test Dataset (CSV)"
 )
 
-selected_model = models_dict[model_name]["model"]
+selected_model = models_dict[model_name]
 
 # ==========================================================
 # HEADER
 # ==========================================================
 st.title("🎓 Income Classification Dashboard")
-st.caption("Pre-trained ML models • Live predictor • Stable KNN")
-
-# ==========================================================
-# LIVE PREDICTOR
-# ==========================================================
-st.subheader("🔮 Live Income Predictor")
-
-corr = df.corr(numeric_only=True)[TARGET].abs().sort_values(ascending=False)
-top_features = corr.index[1:6]
-
-cols = st.columns(3)
-user_input = {}
-
-for i, feature in enumerate(top_features):
-    with cols[i % 3]:
-        user_input[feature] = st.slider(
-            feature,
-            int(df[feature].min()),
-            int(df[feature].max()),
-            int(df[feature].mean())
-        )
-
-if st.button("Predict Income"):
-    input_df = pd.DataFrame([user_input])
-    input_df = pd.get_dummies(input_df, drop_first=True)
-
-    for col in train_columns:
-        if col not in input_df.columns:
-            input_df[col] = 0
-
-    input_df = input_df[train_columns]
-    input_df = input_df.astype(float)
-
-    pred = selected_model.predict(input_df)[0]
-    prob = selected_model.predict_proba(input_df)[0][1]
-    label = label_encoder.inverse_transform([pred])[0]
-
-    c1, c2 = st.columns([2,1])
-    c1.success(f"Predicted Income: {label}")
-    c2.metric(">50K Probability", f"{prob:.2%}")
-
-st.divider()
+st.caption("Stable ML evaluation • KNN limited to 1000 samples")
 
 # ==========================================================
 # TEST DATA EVALUATION
@@ -217,44 +162,29 @@ if uploaded_file:
 
             y_test = test_df[TARGET]
 
-            # ========= SAFE KNN EVALUATION =========
-            if model_name == "KNN":
-                if len(X_test) > 8000:
-                    X_eval = X_test.sample(8000, random_state=42)
-                    y_eval = y_test.loc[X_eval.index]
-                else:
-                    X_eval = X_test
-                    y_eval = y_test
+            # ================= HARD LIMIT FOR KNN =================
+            if model_name == "KNN" and len(X_test) > 1000:
+                X_test = X_test.sample(1000, random_state=42)
+                y_test = y_test.loc[X_test.index]
 
-                preds = selected_model.predict(X_eval)
-                probs = None  # skip predict_proba for large KNN
-                roc_available = False
-
-            else:
-                X_eval = X_test
-                y_eval = y_test
-                preds = selected_model.predict(X_eval)
-                probs = selected_model.predict_proba(X_eval)[:, 1]
-                roc_available = True
+            # ================= PREDICTION =================
+            preds = selected_model.predict(X_test)
+            probs = selected_model.predict_proba(X_test)[:, 1]
 
             # ================= METRICS =================
             st.subheader("📊 Test Metrics")
 
-            acc = accuracy_score(y_eval, preds)
-            f1 = f1_score(y_eval, preds)
-            prec = precision_score(y_eval, preds)
-            rec = recall_score(y_eval, preds)
-            mcc = matthews_corrcoef(y_eval, preds)
-
-            if roc_available:
-                roc_auc = roc_auc_score(y_eval, probs)
-            else:
-                roc_auc = None
+            acc = accuracy_score(y_test, preds)
+            f1 = f1_score(y_test, preds)
+            roc_auc = roc_auc_score(y_test, probs)
+            prec = precision_score(y_test, preds)
+            rec = recall_score(y_test, preds)
+            mcc = matthews_corrcoef(y_test, preds)
 
             m1,m2,m3 = st.columns(3)
             m1.metric("Accuracy", f"{acc:.3f}")
             m2.metric("F1 Score", f"{f1:.3f}")
-            m3.metric("ROC AUC", f"{roc_auc:.3f}" if roc_auc else "Skipped")
+            m3.metric("ROC AUC", f"{roc_auc:.3f}")
 
             m4,m5,m6 = st.columns(3)
             m4.metric("Precision", f"{prec:.3f}")
@@ -265,34 +195,32 @@ if uploaded_file:
             colA, colB = st.columns(2)
 
             with colA:
-                cm = confusion_matrix(y_eval, preds)
+                cm = confusion_matrix(y_test, preds)
                 fig1, ax1 = plt.subplots(figsize=(3,3))
                 sns.heatmap(cm, annot=True, fmt="d", cmap="Blues", ax=ax1)
                 ax1.set_title("Confusion Matrix")
                 st.pyplot(fig1)
 
             with colB:
-                if roc_available:
-                    fpr, tpr, _ = roc_curve(y_eval, probs)
-                    fig2, ax2 = plt.subplots(figsize=(3,3))
-                    ax2.plot(fpr, tpr)
-                    ax2.plot([0,1],[0,1],'--')
-                    ax2.set_title("ROC Curve")
-                    st.pyplot(fig2)
-                else:
-                    st.info("ROC skipped for KNN to maintain performance.")
+                fpr, tpr, _ = roc_curve(y_test, probs)
+                fig2, ax2 = plt.subplots(figsize=(3,3))
+                ax2.plot(fpr, tpr)
+                ax2.plot([0,1],[0,1],'--')
+                ax2.set_title("ROC Curve")
+                st.pyplot(fig2)
 
             # ================= SUMMARY =================
             st.divider()
             st.subheader("🧠 Model Interpretation")
 
             st.write(f"""
-            This model was evaluated on **{len(y_eval)} samples**.
+            Model evaluated on **{len(y_test)} samples**.
 
-            • Accuracy: **{acc:.2%}**  
-            • Precision: **{prec:.2f}**  
-            • Recall: **{rec:.2f}**  
+            • Accuracy: **{acc:.2%}**
+            • ROC AUC: **{roc_auc:.2f}**
+            • Precision: **{prec:.2f}**
+            • Recall: **{rec:.2f}**
             • MCC: **{mcc:.2f}**
 
-            {'Strong performance.' if acc > 0.85 else 'Moderate performance.'}
+            {'Strong predictive performance.' if acc > 0.85 else 'Moderate performance.'}
             """)
