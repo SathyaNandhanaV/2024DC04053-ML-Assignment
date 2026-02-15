@@ -1,9 +1,8 @@
-# models.py
+import pandas as pd
 
-from sklearn.pipeline import Pipeline
-from sklearn.compose import ColumnTransformer
-from sklearn.preprocessing import OneHotEncoder, StandardScaler
-from sklearn.impute import SimpleImputer
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import LabelEncoder, StandardScaler
+from sklearn.pipeline import make_pipeline
 
 from sklearn.linear_model import LogisticRegression
 from sklearn.tree import DecisionTreeClassifier
@@ -13,65 +12,63 @@ from sklearn.ensemble import RandomForestClassifier
 from xgboost import XGBClassifier
 
 
-# ==========================================================
-# PREPROCESSOR
-# ==========================================================
-def build_preprocessor(X):
-
-    categorical_cols = X.select_dtypes(include=["object"]).columns
-    numerical_cols = X.select_dtypes(exclude=["object"]).columns
-
-    numeric_pipeline = Pipeline([
-        ("imputer", SimpleImputer(strategy="median")),
-        ("scaler", StandardScaler())
-    ])
-
-    categorical_pipeline = Pipeline([
-        ("imputer", SimpleImputer(strategy="most_frequent")),
-        ("encoder", OneHotEncoder(handle_unknown="ignore"))
-    ])
-
-    preprocessor = ColumnTransformer([
-        ("num", numeric_pipeline, numerical_cols),
-        ("cat", categorical_pipeline, categorical_cols)
-    ])
-
-    return preprocessor
+def safe_read_csv(path):
+    for enc in ["utf-8", "utf-8-sig", "latin1"]:
+        try:
+            return pd.read_csv(path, encoding=enc)
+        except:
+            continue
+    raise ValueError("Could not read Data.csv")
 
 
-# ==========================================================
-# MODEL DEFINITIONS
-# ==========================================================
-def build_model(model_name):
+def get_all_models():   # ✅ NO ARGUMENTS
 
-    if model_name == "Logistic Regression":
-        return LogisticRegression(
+    df = safe_read_csv("Data.csv")
+    df.columns = df.columns.str.strip()
+
+    TARGET = "income"
+
+    label_encoder = LabelEncoder()
+    df[TARGET] = label_encoder.fit_transform(df[TARGET])
+
+    X = pd.get_dummies(df.drop(columns=[TARGET]), drop_first=True)
+    X = X.astype(float)   # ensure dense
+    y = df[TARGET]
+
+    train_columns = X.columns
+
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.2, random_state=42
+    )
+
+    models = {
+        "Logistic Regression": LogisticRegression(
             solver="liblinear",
             max_iter=800
-        )
+        ),
 
-    elif model_name == "Decision Tree":
-        return DecisionTreeClassifier(max_depth=6)
+        "Decision Tree": DecisionTreeClassifier(
+            max_depth=6
+        ),
 
-    elif model_name == "KNN":
-        return KNeighborsClassifier(
-            n_neighbors=5,
-            algorithm="ball_tree"
-        )
+        "KNN": make_pipeline(
+            StandardScaler(),
+            KNeighborsClassifier(
+                n_neighbors=5,
+                n_jobs=-1
+            )
+        ),
 
-    elif model_name == "Naive Bayes":
-        return GaussianNB()
+        "Naive Bayes": GaussianNB(),
 
-    elif model_name == "Random Forest":
-        return RandomForestClassifier(
+        "Random Forest": RandomForestClassifier(
             n_estimators=60,
             max_depth=8,
             n_jobs=-1,
             random_state=42
-        )
+        ),
 
-    elif model_name == "XGBoost":
-        return XGBClassifier(
+        "XGBoost": XGBClassifier(
             eval_metric="logloss",
             n_estimators=60,
             max_depth=4,
@@ -79,44 +76,93 @@ def build_model(model_name):
             verbosity=0,
             random_state=42
         )
+    }
 
-    else:
-        raise ValueError("Invalid model name")
+    for model in models.values():
+        model.fit(X_train, y_train)
+
+    return models, train_columns, label_encoder
+import pandas as pd
+
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import LabelEncoder, StandardScaler
+from sklearn.pipeline import make_pipeline
+
+from sklearn.linear_model import LogisticRegression
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.naive_bayes import GaussianNB
+from sklearn.ensemble import RandomForestClassifier
+from xgboost import XGBClassifier
 
 
-# ==========================================================
-# CREATE PIPELINE
-# ==========================================================
-def get_model(model_name, X):
-
-    preprocessor = build_preprocessor(X)
-    model = build_model(model_name)
-
-    pipeline = Pipeline([
-        ("preprocessor", preprocessor),
-        ("classifier", model)
-    ])
-
-    return pipeline
+def safe_read_csv(path):
+    for enc in ["utf-8", "utf-8-sig", "latin1"]:
+        try:
+            return pd.read_csv(path, encoding=enc)
+        except:
+            continue
+    raise ValueError("Could not read Data.csv")
 
 
-# ==========================================================
-# RETURN ALL MODELS
-# ==========================================================
-def get_all_models(X):
+def get_all_models():   # ✅ NO ARGUMENTS
 
-    model_names = [
-        "Logistic Regression",
-        "Decision Tree",
-        "KNN",
-        "Naive Bayes",
-        "Random Forest",
-        "XGBoost"
-    ]
+    df = safe_read_csv("Data.csv")
+    df.columns = df.columns.str.strip()
 
-    models = {}
+    TARGET = "income"
 
-    for name in model_names:
-        models[name] = get_model(name, X)
+    label_encoder = LabelEncoder()
+    df[TARGET] = label_encoder.fit_transform(df[TARGET])
 
-    return models
+    X = pd.get_dummies(df.drop(columns=[TARGET]), drop_first=True)
+    X = X.astype(float)   # ensure dense
+    y = df[TARGET]
+
+    train_columns = X.columns
+
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.2, random_state=42
+    )
+
+    models = {
+        "Logistic Regression": LogisticRegression(
+            solver="liblinear",
+            max_iter=800
+        ),
+
+        "Decision Tree": DecisionTreeClassifier(
+            max_depth=6
+        ),
+
+        "KNN": make_pipeline(
+            StandardScaler(),
+            KNeighborsClassifier(
+                n_neighbors=5,
+                n_jobs=-1
+            )
+        ),
+
+        "Naive Bayes": GaussianNB(),
+
+        "Random Forest": RandomForestClassifier(
+            n_estimators=60,
+            max_depth=8,
+            n_jobs=-1,
+            random_state=42
+        ),
+
+        "XGBoost": XGBClassifier(
+            eval_metric="logloss",
+            n_estimators=60,
+            max_depth=4,
+            learning_rate=0.1,
+            verbosity=0,
+            random_state=42
+        )
+    }
+
+    for model in models.values():
+        model.fit(X_train, y_train)
+
+    return models, train_columns, label_encoder
