@@ -24,22 +24,24 @@ from sklearn.naive_bayes import GaussianNB
 from xgboost import XGBClassifier
 
 
-# -----------------------------
+# ------------------------------------------------
 # PAGE CONFIG
-# -----------------------------
+# ------------------------------------------------
 st.set_page_config(layout="wide")
 st.title("🎓 BITS ML Classification Dashboard")
 st.markdown("Pre-trained models • Upload test dataset to evaluate")
 
-# -----------------------------
+
+# ------------------------------------------------
 # LOAD DATA
-# -----------------------------
+# ------------------------------------------------
 @st.cache_data
 def load_data():
     df = pd.read_csv("Data.csv")
     df.columns = df.columns.str.strip()
     df.replace("?", np.nan, inplace=True)
     return df
+
 
 df = load_data()
 target = "income"
@@ -51,9 +53,9 @@ if y.dtype == "object":
     y = y.astype("category").cat.codes
 
 
-# -----------------------------
+# ------------------------------------------------
 # PREPROCESSOR
-# -----------------------------
+# ------------------------------------------------
 categorical_cols = X.select_dtypes(include="object").columns
 numerical_cols = X.select_dtypes(exclude="object").columns
 
@@ -70,9 +72,9 @@ preprocessor = ColumnTransformer([
 ])
 
 
-# -----------------------------
+# ------------------------------------------------
 # TRAIN MODELS (FAST VERSION)
-# -----------------------------
+# ------------------------------------------------
 @st.cache_resource
 def train_models():
 
@@ -147,9 +149,9 @@ def train_models():
 models_dict, leaderboard_df = train_models()
 
 
-# -----------------------------
-# 🎯 TARGET VARIABLE VISUAL FOCUS
-# -----------------------------
+# ------------------------------------------------
+# TARGET VARIABLE VISUAL
+# ------------------------------------------------
 st.markdown("## 🎯 Target Variable Distribution")
 
 fig, ax = plt.subplots(figsize=(4,4))
@@ -163,30 +165,31 @@ ax.set_title("Income Classification Distribution")
 st.pyplot(fig)
 
 
-# -----------------------------
-# 🏆 PRE-TRAINED MODEL HIGHLIGHT
-# -----------------------------
+# ------------------------------------------------
+# PRE-TRAINED MODEL HIGHLIGHT
+# ------------------------------------------------
 st.markdown("## 🏆 Pre-Trained Model Performance")
 
 best_model = leaderboard_df.iloc[0]
 
 col1, col2, col3 = st.columns(3)
-
 col1.metric("🥇 Best Model", best_model["Model"])
 col2.metric("Accuracy", f"{best_model['Accuracy']:.4f}")
 col3.metric("ROC AUC", f"{best_model['ROC AUC']:.4f}")
 
-st.dataframe(
-    leaderboard_df.style
-    .background_gradient(cmap="viridis")
-    .format("{:.4f}"),
-    use_container_width=True
-)
+# SAFE STYLING (NO CRASH)
+numeric_cols = leaderboard_df.select_dtypes(include="number").columns
+
+styled = leaderboard_df.style \
+    .format({col: "{:.4f}" for col in numeric_cols}) \
+    .background_gradient(subset=numeric_cols, cmap="viridis")
+
+st.dataframe(styled, use_container_width=True)
 
 
-# -----------------------------
-# 📂 UPLOAD TEST DATA
-# -----------------------------
+# ------------------------------------------------
+# UPLOAD TEST DATA
+# ------------------------------------------------
 st.markdown("## 📂 Upload Test Dataset")
 uploaded_file = st.file_uploader("Upload CSV", type=["csv"])
 
@@ -212,16 +215,17 @@ if uploaded_file:
     probs = model.predict_proba(X_test)[:, 1]
 
     # -----------------------------
-    # 🔮 CLASSIFICATION SUMMARY
+    # CLASSIFICATION RESULTS
     # -----------------------------
     st.markdown("## 🔮 Classification Results")
 
-    big1, big2 = st.columns(2)
-    big1.metric("🎯 Accuracy", f"{accuracy_score(y_test, preds):.4f}")
-    big2.metric("📊 F1 Score", f"{f1_score(y_test, preds):.4f}")
+    colA, colB = st.columns(2)
+    colA.metric("🎯 Accuracy", f"{accuracy_score(y_test, preds):.4f}")
+    colB.metric("📊 F1 Score", f"{f1_score(y_test, preds):.4f}")
 
     # Prediction distribution
     st.markdown("### Prediction Distribution")
+
     fig_pred, ax_pred = plt.subplots(figsize=(4,4))
     pd.Series(preds).value_counts().plot.pie(
         autopct="%1.1f%%",
@@ -232,9 +236,7 @@ if uploaded_file:
     ax_pred.set_title("Predicted Class Distribution")
     st.pyplot(fig_pred)
 
-    # -----------------------------
-    # 📊 DETAILED METRICS
-    # -----------------------------
+    # Detailed Metrics
     st.markdown("### 📊 Detailed Metrics")
 
     m1, m2, m3 = st.columns(3)
@@ -247,18 +249,14 @@ if uploaded_file:
     m5.metric("MCC", f"{matthews_corrcoef(y_test, preds):.4f}")
     m6.metric("Support", len(y_test))
 
-    # -----------------------------
-    # CONFUSION MATRIX
-    # -----------------------------
+    # Confusion Matrix
     st.markdown("### 🔥 Confusion Matrix")
     cm = confusion_matrix(y_test, preds)
     fig_cm, ax_cm = plt.subplots(figsize=(4,3))
     sns.heatmap(cm, annot=True, fmt="d", cmap="Blues", ax=ax_cm)
     st.pyplot(fig_cm)
 
-    # -----------------------------
-    # ROC CURVE
-    # -----------------------------
+    # ROC Curve
     st.markdown("### 📈 ROC Curve")
     fpr, tpr, _ = roc_curve(y_test, probs)
     fig_roc, ax_roc = plt.subplots(figsize=(5,4))
