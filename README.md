@@ -1,6 +1,6 @@
-# 🎓 Income Level Prediction Using Machine Learning
+#  Income Level Prediction Using Machine Learning
 
-## 1️⃣ Problem Statement
+## 1️. Problem Statement
 
 The objective of this project is to predict whether an individual earns:
 
@@ -16,7 +16,7 @@ Using demographic and employment-related features such as age, education, occupa
 
 ---
 
-## 2️⃣ Dataset Description
+## 2️. Dataset Description
 
 - **Source:** UCI Adult Census Income Dataset  
 - **Instances:** 48,842 records  
@@ -47,7 +47,7 @@ Using demographic and employment-related features such as age, education, occupa
 
 ---
 
-## 3️⃣ Models Used & Performance Comparison
+## 3️. Models Used & Performance Comparison
 
 We implemented and evaluated 6 classification models using the full feature set.
 
@@ -62,33 +62,33 @@ We implemented and evaluated 6 classification models using the full feature set.
 
 ---
 
-## 4️⃣ Observations
+## 4️. Observations
 
-### 🥇 Best Performing Model: XGBoost
+###  Best Performing Model: XGBoost
 - Highest accuracy: **87.41%**
 - Strong ROC AUC: **0.93**
 - Best MCC score: **0.64**
 - Excellent generalization ability
 
-### 🥈 Random Forest
+### 2. Random Forest
 - Strong performance: **85.66%**
 - Effectively handles nonlinear relationships
 
-### 🥉 Logistic Regression
+### 3. Logistic Regression
 - Competitive baseline: **85.43%**
 - Indicates partial linear separability in income prediction
 
-### ⚠ Naive Bayes
+### 4. Naive Bayes
 - High precision but lower recall
 - Simplifying assumptions reduce performance
 
-### 🔍 kNN
+### 5. kNN
 - Moderate performance
 - Sensitive to scaling and dataset size
 
 ---
 
-## 5️⃣ Key Insights
+## 5️. Key Insights
 
 - Ensemble models outperform single models.
 - Important predictors include:
@@ -100,7 +100,7 @@ We implemented and evaluated 6 classification models using the full feature set.
 
 ---
 
-## 6️⃣ Model Interpretation
+## 6️. Model Interpretation
 
 ### Logistic Regression
 Learns weighted linear relationships between features and income.
@@ -116,7 +116,7 @@ Sequential boosting model that improves errors iteratively, leading to strong pe
 
 ---
 
-## 7️⃣ Conclusion
+## 7️. Conclusion
 
 The Income Classification problem can be effectively solved using ensemble learning methods.
 
@@ -131,9 +131,9 @@ The deployed Streamlit dashboard includes:
 
 ---
 
-## ▶️ How to Run
+## 8. How to Run
 
 ```bash
 pip install -r requirements.txt
-python train_models.py   # Optional (if models not pre-trained)
-streamlit run app.py
+python models.py   # Optional (if models not pre-trained)
+streamlit run App.py
