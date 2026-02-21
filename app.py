@@ -5,189 +5,184 @@ import numpy as np
 import plotly.graph_objects as go
 from nselib import capital_market
 
-st.set_page_config(page_title="NSE Equity Research Pro", layout="wide")
-st.title("📊 NSE Equity Research Dashboard (Ultra Optimized)")
+st.set_page_config(page_title="NSE Equity Research Stable", layout="wide")
+st.title("📊 NSE Equity Research Dashboard (Stable Version)")
 
-# ----------------------------------------------------------
-# LOAD NSE STOCK LIST
-# ----------------------------------------------------------
+# ---------------------------------------------------------
+# LOAD STOCK LIST
+# ---------------------------------------------------------
 @st.cache_data
-def get_all_nse_stocks():
+def get_all_stocks():
     data = capital_market.equity_list()
     data = data[data[" SERIES"] == "EQ"]
     return sorted(data["SYMBOL"].unique())
 
-stocks = get_all_nse_stocks()
+stocks = get_all_stocks()
 
 selected_stock = st.selectbox("Select NSE Stock", stocks)
 
-# ----------------------------------------------------------
-# OPTIMIZED PEER FINDER
-# ----------------------------------------------------------
-@st.cache_data
-def get_sector_peers(selected_stock, stock_list, max_peers=20):
+# ---------------------------------------------------------
+# GET BASIC STOCK INFO (CACHED)
+# ---------------------------------------------------------
+@st.cache_data(ttl=3600)
+def get_basic_info(symbol):
+    t = yf.Ticker(symbol + ".NS")
+    return t.info
 
-    selected_ticker = yf.Ticker(selected_stock + ".NS")
-    selected_sector = selected_ticker.info.get("sector")
+# ---------------------------------------------------------
+# GET PEERS (LIMITED + CACHED)
+# ---------------------------------------------------------
+@st.cache_data(ttl=3600)
+def get_sector_peers(selected, stock_list, max_peers=10):
 
-    if not selected_sector:
+    selected_info = get_basic_info(selected)
+    sector = selected_info.get("sector")
+
+    if not sector:
         return [], None
 
     peers = []
 
     for stock in stock_list:
-        if stock == selected_stock:
+        if stock == selected:
             continue
 
         try:
-            t = yf.Ticker(stock + ".NS")
-            sector = t.info.get("sector")
-
-            if sector == selected_sector:
+            info = get_basic_info(stock)
+            if info.get("sector") == sector:
                 peers.append(stock)
 
             if len(peers) >= max_peers:
                 break
-
         except:
             continue
 
-    return peers, selected_sector
+    return peers, sector
 
 
-# ----------------------------------------------------------
+# ---------------------------------------------------------
 # MAIN
-# ----------------------------------------------------------
+# ---------------------------------------------------------
 if selected_stock:
 
+    info = get_basic_info(selected_stock)
     ticker = yf.Ticker(selected_stock + ".NS")
-    info = ticker.info
 
     st.header(f"🔎 {selected_stock} Overview")
 
     col1, col2, col3, col4 = st.columns(4)
-    col1.metric("Current Price", info.get("currentPrice", "N/A"))
-    col2.metric("PE Ratio", info.get("trailingPE", "N/A"))
+
+    col1.metric("Price", info.get("currentPrice", "N/A"))
+    col2.metric("PE", info.get("trailingPE", "N/A"))
     col3.metric("Market Cap", info.get("marketCap", "N/A"))
     col4.metric("Sector", info.get("sector", "N/A"))
 
-    # ----------------------------------------------------------
+    # ---------------------------------------------------------
     # PRICE TREND
-    # ----------------------------------------------------------
-    st.subheader("📈 Share Price Trend (5Y)")
-    price_data = ticker.history(period="5y")
+    # ---------------------------------------------------------
+    st.subheader("📈 Share Price (5Y)")
 
-    fig_price = go.Figure()
-    fig_price.add_trace(go.Scatter(
-        x=price_data.index,
-        y=price_data["Close"],
-        name="Close Price"
+    price = ticker.history(period="5y")
+
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=price.index,
+        y=price["Close"],
+        name="Price"
     ))
-    st.plotly_chart(fig_price, use_container_width=True)
 
-    # ----------------------------------------------------------
+    st.plotly_chart(fig, use_container_width=True)
+
+    # ---------------------------------------------------------
     # PE TREND
-    # ----------------------------------------------------------
-    st.subheader("📊 PE Ratio Trend")
+    # ---------------------------------------------------------
+    st.subheader("📊 PE Trend")
 
     eps = info.get("trailingEps")
 
     if eps and eps > 0:
-        price_data["PE"] = price_data["Close"] / eps
+        price["PE"] = price["Close"] / eps
 
         fig_pe = go.Figure()
         fig_pe.add_trace(go.Scatter(
-            x=price_data.index,
-            y=price_data["PE"],
-            name="PE Ratio"
+            x=price.index,
+            y=price["PE"],
+            name="PE"
         ))
+
         st.plotly_chart(fig_pe, use_container_width=True)
     else:
-        st.warning("EPS not available.")
+        st.warning("EPS unavailable.")
 
-    # ----------------------------------------------------------
-    # PEER ANALYSIS
-    # ----------------------------------------------------------
-    st.subheader("🏢 Peer Comparison (Same Sector)")
+    # ---------------------------------------------------------
+    # PEERS
+    # ---------------------------------------------------------
+    st.subheader("🏢 Same Sector Peers")
 
-    peer_symbols, sector = get_sector_peers(selected_stock, stocks)
+    peers, sector = get_sector_peers(selected_stock, stocks)
 
-    if sector and peer_symbols:
+    if peers:
 
-        peer_tickers = [p + ".NS" for p in peer_symbols]
-
-        # Batch download prices
-        price_batch = yf.download(peer_tickers, period="1d")["Close"]
+        # Batch price download
+        tickers = [p + ".NS" for p in peers]
+        batch_prices = yf.download(tickers, period="1d")["Close"]
 
         peer_data = []
 
-        for peer in peer_symbols:
-            try:
-                t = yf.Ticker(peer + ".NS")
-                i = t.info
+        for peer in peers:
+            info_peer = get_basic_info(peer)
 
-                peer_data.append({
-                    "Stock": peer,
-                    "Price": price_batch.get(peer + ".NS"),
-                    "PE": i.get("trailingPE"),
-                    "MarketCap": i.get("marketCap")
-                })
+            try:
+                latest_price = batch_prices[peer + ".NS"].iloc[-1]
             except:
-                continue
+                latest_price = None
+
+            peer_data.append({
+                "Stock": peer,
+                "Price": latest_price,
+                "PE": info_peer.get("trailingPE"),
+                "MarketCap": info_peer.get("marketCap")
+            })
 
         peers_df = pd.DataFrame(peer_data).dropna()
 
-        if not peers_df.empty:
-            peers_df = peers_df.sort_values("MarketCap", ascending=False)
-            st.dataframe(peers_df)
+        st.dataframe(peers_df)
 
-            # PE comparison chart
-            st.subheader("📊 Peer PE Comparison")
+        # PE Chart
+        fig_peer = go.Figure()
+        fig_peer.add_trace(go.Bar(
+            x=peers_df["Stock"],
+            y=peers_df["PE"]
+        ))
 
-            fig_peer_pe = go.Figure()
-            fig_peer_pe.add_trace(go.Bar(
-                x=peers_df["Stock"],
-                y=peers_df["PE"]
-            ))
-            st.plotly_chart(fig_peer_pe, use_container_width=True)
+        st.plotly_chart(fig_peer, use_container_width=True)
 
-        # ----------------------------------------------------------
+        # ---------------------------------------------------------
         # SECTOR PERFORMANCE
-        # ----------------------------------------------------------
-        st.subheader("📈 Sector Performance vs Selected Stock (1Y Return)")
+        # ---------------------------------------------------------
+        st.subheader("📈 Sector vs Stock (1Y Return)")
 
         returns = []
 
         sel_hist = ticker.history(period="1y")
         if len(sel_hist) > 0:
-            sel_return = (sel_hist["Close"].iloc[-1] /
-                          sel_hist["Close"].iloc[0] - 1) * 100
-
-            returns.append({
-                "Name": selected_stock,
-                "Return": sel_return
-            })
+            sel_ret = (sel_hist["Close"].iloc[-1] /
+                       sel_hist["Close"].iloc[0] - 1) * 100
+            returns.append({"Name": selected_stock, "Return": sel_ret})
 
         sector_returns = []
 
-        for peer in peer_symbols:
-            try:
-                t = yf.Ticker(peer + ".NS")
-                hist = t.history(period="1y")
-                if len(hist) > 0:
-                    ret = (hist["Close"].iloc[-1] /
-                           hist["Close"].iloc[0] - 1) * 100
-                    sector_returns.append(ret)
-            except:
-                continue
+        for peer in peers:
+            t = yf.Ticker(peer + ".NS")
+            hist = t.history(period="1y")
+            if len(hist) > 0:
+                ret = (hist["Close"].iloc[-1] /
+                       hist["Close"].iloc[0] - 1) * 100
+                sector_returns.append(ret)
 
         if sector_returns:
-            median_sector_return = np.median(sector_returns)
-
-            returns.append({
-                "Name": f"{sector} Sector (Median)",
-                "Return": median_sector_return
-            })
+            median_ret = np.median(sector_returns)
+            returns.append({"Name": f"{sector} Sector Median", "Return": median_ret})
 
             perf_df = pd.DataFrame(returns)
 
@@ -200,25 +195,21 @@ if selected_stock:
             st.plotly_chart(fig_perf, use_container_width=True)
 
     else:
-        st.warning("Sector data unavailable.")
+        st.warning("Peers not found.")
 
-    # ----------------------------------------------------------
-    # NEWS (SAFE)
-    # ----------------------------------------------------------
+    # ---------------------------------------------------------
+    # NEWS
+    # ---------------------------------------------------------
     st.subheader("📰 Latest News")
 
-    news_items = ticker.news
+    news = ticker.news
 
-    if news_items:
-        for item in news_items[:5]:
+    if news:
+        for item in news[:5]:
             title = item.get("title")
             link = item.get("link")
-            publisher = item.get("publisher")
-
             if title and link:
                 st.markdown(f"### [{title}]({link})")
-                if publisher:
-                    st.caption(publisher)
                 st.write("---")
     else:
-        st.info("No recent news available.")
+        st.info("No recent news.")
