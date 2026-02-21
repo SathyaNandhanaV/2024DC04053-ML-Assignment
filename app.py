@@ -18,10 +18,21 @@ def get_all_stocks():
     return sorted(data["SYMBOL"].unique())
 
 stocks = get_all_stocks()
-selected_stock = st.selectbox("Select NSE Stock", stocks)
 
 # ---------------------------------------------------------
-# SAFE INFO FETCH (CACHED)
+# 🔎 SEARCH BOX
+# ---------------------------------------------------------
+search_text = st.text_input("🔎 Search Stock (Type Name or Symbol)")
+
+if search_text:
+    filtered_stocks = [s for s in stocks if search_text.upper() in s.upper()]
+else:
+    filtered_stocks = stocks
+
+selected_stock = st.selectbox("Select NSE Stock", filtered_stocks)
+
+# ---------------------------------------------------------
+# SAFE INFO FETCH
 # ---------------------------------------------------------
 @st.cache_data(ttl=3600)
 def get_stock_info(symbol):
@@ -31,7 +42,7 @@ def get_stock_info(symbol):
         return {}
 
 # ---------------------------------------------------------
-# OPTIMIZED PEER FINDER
+# PEER FINDER
 # ---------------------------------------------------------
 @st.cache_data(ttl=3600)
 def get_sector_peers(selected_symbol, stock_list, max_peers=8):
@@ -76,7 +87,7 @@ if selected_stock:
     col4.metric("Sector", info.get("sector", "N/A"))
 
     # ---------------------------------------------------------
-    # PRICE TREND (5Y)
+    # PRICE TREND
     # ---------------------------------------------------------
     st.subheader("📈 Share Price (5Y)")
 
@@ -124,7 +135,6 @@ if selected_stock:
 
         tickers = [p + ".NS" for p in peers]
 
-        # Batch latest price
         try:
             batch_price = yf.download(tickers, period="1d", progress=False)["Close"]
         except:
@@ -155,7 +165,6 @@ if selected_stock:
         if not peers_df.empty:
             st.dataframe(peers_df)
 
-            # PE Comparison Chart
             fig_peer = go.Figure()
             fig_peer.add_trace(go.Bar(
                 x=peers_df["Stock"],
@@ -163,64 +172,31 @@ if selected_stock:
             ))
             st.plotly_chart(fig_peer, use_container_width=True)
 
-        # ---------------------------------------------------------
-        # SECTOR PERFORMANCE (Batch 1Y Return)
-        # ---------------------------------------------------------
-        st.subheader("📈 Sector vs Stock (1Y Return)")
-
-        try:
-            all_tickers = [selected_stock + ".NS"] + tickers
-            batch_hist = yf.download(all_tickers, period="1y", progress=False)["Close"]
-
-            returns = []
-
-            # Selected stock return
-            sel_series = batch_hist[selected_stock + ".NS"]
-            sel_ret = (sel_series.iloc[-1] / sel_series.iloc[0] - 1) * 100
-            returns.append({"Name": selected_stock, "Return": sel_ret})
-
-            # Sector median return
-            sector_returns = []
-
-            for peer in peers:
-                peer_series = batch_hist[peer + ".NS"]
-                ret = (peer_series.iloc[-1] / peer_series.iloc[0] - 1) * 100
-                sector_returns.append(ret)
-
-            if sector_returns:
-                median_ret = np.median(sector_returns)
-                returns.append({"Name": f"{sector} Median", "Return": median_ret})
-
-                perf_df = pd.DataFrame(returns)
-
-                fig_perf = go.Figure()
-                fig_perf.add_trace(go.Bar(
-                    x=perf_df["Name"],
-                    y=perf_df["Return"]
-                ))
-                st.plotly_chart(fig_perf, use_container_width=True)
-
-        except:
-            st.warning("Sector performance unavailable.")
-
     else:
         st.warning("Peers not found.")
 
     # ---------------------------------------------------------
-    # NEWS
+    # 📰 FILTERED NEWS SECTION
     # ---------------------------------------------------------
-    st.subheader("📰 Latest News")
+    st.subheader("📰 Latest News (Filtered by Stock Name)")
 
     try:
         news = ticker.news
+        found = False
+
         if news:
-            for item in news[:5]:
+            for item in news:
                 title = item.get("title")
                 link = item.get("link")
-                if title and link:
+
+                # Only show articles containing stock name
+                if title and selected_stock.lower() in title.lower():
                     st.markdown(f"### [{title}]({link})")
                     st.write("---")
-        else:
-            st.info("No recent news.")
+                    found = True
+
+        if not found:
+            st.info("No recent articles mentioning this stock directly.")
+
     except:
         st.info("News unavailable.")
